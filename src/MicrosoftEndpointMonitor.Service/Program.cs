@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using MicrosoftEndpointMonitor.Service.Collectors;
 using MicrosoftEndpointMonitor.Service.Services;
+using MicrosoftEndpointMonitor.Shared.Models;
 using System.Text.Json;
 using System.Text;
 
@@ -49,15 +50,15 @@ namespace MicrosoftEndpointMonitor.Service
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("MS-Monitor Service started - Real network monitoring active");
-            
+            _logger.LogInformation("MS-Monitor Service started - Real network monitoring with latency tracking active");
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    // Get real TCP connections
+                    // Get real TCP connections with latency measurements
                     var connections = _connectionEnumerator.GetActiveConnections();
-                    
+
                     // Detect Microsoft endpoints
                     var microsoftConnections = new List<NetworkConnection>();
                     foreach (var connection in connections)
@@ -70,14 +71,14 @@ namespace MicrosoftEndpointMonitor.Service
                         }
                     }
 
-                    _logger.LogInformation("Found {TotalConnections} total connections, {MicrosoftConnections} Microsoft connections", 
+                    _logger.LogInformation("Monitoring Cycle: {TotalConnections} total, {MicrosoftConnections} Microsoft endpoints detected",
                         connections.Count, microsoftConnections.Count);
 
-                    // Log Microsoft connections with details
-                    foreach (var msConn in microsoftConnections)
+                    // Log detailed Microsoft connections with latency
+                    foreach (var msConn in microsoftConnections.Where(c => c.Latency.HasValue))
                     {
-                        _logger.LogInformation("Microsoft Connection: {Service} ({Process}) -> {RemoteAddress}:{RemotePort} Latency: {Latency}ms",
-                            msConn.ServiceName, msConn.ProcessName, msConn.RemoteAddress, msConn.RemotePort, msConn.Latency);
+                        _logger.LogInformation("MS Endpoint: {Service} ({Process}) -> {RemoteAddress}:{RemotePort} | Latency: {Latency}ms | State: {State}",
+                            msConn.ServiceName, msConn.ProcessName, msConn.RemoteAddress, msConn.RemotePort, msConn.Latency, msConn.State);
                     }
 
                     // Send data to API
@@ -88,7 +89,7 @@ namespace MicrosoftEndpointMonitor.Service
                     _logger.LogError(ex, "Error during network monitoring cycle");
                 }
 
-                await Task.Delay(5000, stoppingToken);
+                await Task.Delay(5000, stoppingToken); // Monitor every 5 seconds
             }
         }
 
@@ -97,7 +98,7 @@ namespace MicrosoftEndpointMonitor.Service
             try
             {
                 using var httpClient = _httpClientFactory.CreateClient();
-                
+
                 var data = new
                 {
                     totalConnections = allConnections.Count,
@@ -111,6 +112,7 @@ namespace MicrosoftEndpointMonitor.Service
                         processName = c.ProcessName,
                         serviceName = c.ServiceName,
                         latency = c.Latency,
+                        state = c.State,
                         timestamp = c.Timestamp
                     }).ToArray(),
                     activeServices = microsoftConnections
@@ -119,28 +121,39 @@ namespace MicrosoftEndpointMonitor.Service
                         {
                             name = g.Key,
                             connections = g.Count(),
-                            avgLatency = g.Where(c => c.Latency.HasValue).Average(c => c.Latency.Value)
+                            avgLatency = g.Where(c => c.Latency.HasValue)
+                                         .Select(c => c.Latency!.Value)  // Fixed nullable warning
+                                         .DefaultIfEmpty(0)
+                                         .Average(),
+                            processes = g.Select(c => c.ProcessName).Distinct().ToArray()
                         }).ToArray(),
                     timestamp = DateTime.UtcNow
                 };
 
-                var json = JsonSerializer.Serialize(data);
+                var json = JsonSerializer.Serialize(data, new JsonSerializerOptions 
+                { 
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
+                });
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                
+
                 var response = await httpClient.PostAsync($"{_apiBaseUrl}/api/network/update", content);
-                
+
                 if (response.IsSuccessStatusCode)
                 {
-                    _logger.LogDebug("Successfully sent data to API");
+                    _logger.LogDebug("Successfully sent monitoring data to API");
                 }
                 else
                 {
                     _logger.LogWarning("Failed to send data to API: {StatusCode}", response.StatusCode);
                 }
             }
+            catch (HttpRequestException)
+            {
+                _logger.LogDebug("API not available - running in standalone monitoring mode");
+            }
             catch (Exception ex)
             {
-                _logger.LogDebug("Could not send data to API (API may not be running): {Error}", ex.Message);
+                _logger.LogError(ex, "Error sending data to API");
             }
         }
     }

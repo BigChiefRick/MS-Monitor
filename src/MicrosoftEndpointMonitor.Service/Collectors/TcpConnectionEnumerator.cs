@@ -1,148 +1,406 @@
-using System.Runtime.InteropServices;
 using System.Net;
-using System.Diagnostics;
+using System.Text.RegularExpressions;
 using MicrosoftEndpointMonitor.Shared.Models;
+using MicrosoftEndpointMonitor.Data;
+using Microsoft.EntityFrameworkCore;
 
-namespace MicrosoftEndpointMonitor.Service.Collectors;
+namespace MicrosoftEndpointMonitor.Service.Services;
 
 /// <summary>
-/// Enumerates TCP connections using Windows IP Helper API
+/// Service for detecting and categorizing Microsoft endpoints
 /// </summary>
-public class TcpConnectionEnumerator
+public class MicrosoftEndpointDetector
 {
-    private readonly ILogger<TcpConnectionEnumerator> _logger;
-    private readonly Dictionary<int, ProcessInfo> _processCache = new();
-    private DateTime _lastCacheUpdate = DateTime.MinValue;
-    private readonly TimeSpan _cacheExpiry = TimeSpan.FromMinutes(5);
+    private readonly ILogger<MicrosoftEndpointDetector> _logger;
+    private readonly NetworkContext _context;
+    private List<MicrosoftEndpoint> _endpoints = new();
+    private DateTime _lastEndpointUpdate = DateTime.MinValue;
+    private readonly TimeSpan _endpointCacheExpiry = TimeSpan.FromHours(1);
 
-    public TcpConnectionEnumerator(ILogger<TcpConnectionEnumerator> logger)
+    // DNS resolution cache
+    private readonly Dictionary<string, string> _dnsCache = new();
+    private readonly Dictionary<string, DateTime> _dnsCacheTimestamps = new();
+    private readonly TimeSpan _dnsCacheExpiry = TimeSpan.FromMinutes(30);
+
+    public MicrosoftEndpointDetector(ILogger<MicrosoftEndpointDetector> logger, NetworkContext context)
     {
         _logger = logger;
+        _context = context;
     }
 
     /// <summary>
-    /// Gets all active TCP connections with process information
+    /// Detects if a connection is to a Microsoft endpoint and categorizes it
     /// </summary>
-    public async Task<List<NetworkConnection>> GetActiveConnectionsAsync()
+    public async Task<(string? ServiceName, string? Category)> DetectMicrosoftServiceAsync(NetworkConnection connection)
     {
         try
         {
-            var connections = new List<NetworkConnection>();
-            
-            // Get IPv4 TCP connections
-            var ipv4Connections = GetTcpConnections(AddressFamily.IPv4);
-            connections.AddRange(ipv4Connections);
-            
-            // Get IPv6 TCP connections
-            var ipv6Connections = GetTcpConnections(AddressFamily.IPv6);
-            connections.AddRange(ipv6Connections);
+            await EnsureEndpointsLoadedAsync();
 
-            _logger.LogDebug("Enumerated {Count} TCP connections", connections.Count);
-            return connections;
+            // Try hostname-based detection first (more accurate)
+            var hostname = await ResolveHostnameAsync(connection.RemoteIp);
+            if (!string.IsNullOrEmpty(hostname))
+            {
+                connection.RemoteHost = hostname;
+                var (serviceName, category) = DetectByHostname(hostname);
+                if (!string.IsNullOrEmpty(serviceName))
+                {
+                    _logger.LogDebug("Detected Microsoft service {Service} for hostname {Hostname}", serviceName, hostname);
+                    return (serviceName, category);
+                }
+            }
+
+            // Fall back to IP range detection
+            var ipResult = DetectByIpRange(connection.RemoteIp);
+            if (!string.IsNullOrEmpty(ipResult.ServiceName))
+            {
+                _logger.LogDebug("Detected Microsoft service {Service} for IP {IP}", ipResult.ServiceName, connection.RemoteIp);
+                return ipResult;
+            }
+
+            return (null, null);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to enumerate TCP connections");
-            return new List<NetworkConnection>();
+            _logger.LogWarning(ex, "Failed to detect Microsoft service for {IP}", connection.RemoteIp);
+            return (null, null);
         }
     }
 
-    private List<NetworkConnection> GetTcpConnections(AddressFamily addressFamily)
+    /// <summary>
+    /// Detects Microsoft service by hostname/domain
+    /// </summary>
+    private (string? ServiceName, string? Category) DetectByHostname(string hostname)
     {
-        var connections = new List<NetworkConnection>();
-        var tableClass = addressFamily == AddressFamily.IPv4 
-            ? TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL 
-            : TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL;
+        var endpoints = _endpoints
+            .Where(e => e.IsActive && !string.IsNullOrEmpty(e.DomainPattern))
+            .OrderByDescending(e => e.Priority)
+            .ToList();
 
-        var bufferSize = 0;
-        var result = GetExtendedTcpTable(IntPtr.Zero, ref bufferSize, true, 
-            (int)addressFamily, tableClass, 0);
-
-        if (result != 0 && result != ERROR_INSUFFICIENT_BUFFER)
+        foreach (var endpoint in endpoints)
         {
-            _logger.LogWarning("Failed to get TCP table size. Error: {Error}", result);
-            return connections;
+            if (IsHostnameMatch(hostname, endpoint.DomainPattern!))
+            {
+                return (endpoint.ServiceName, endpoint.ServiceCategory);
+            }
         }
 
-        var tcpTablePtr = Marshal.AllocHGlobal(bufferSize);
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Detects Microsoft service by IP range
+    /// </summary>
+    private (string? ServiceName, string? Category) DetectByIpRange(string ipAddress)
+    {
+        if (!IPAddress.TryParse(ipAddress, out var ip))
+        {
+            return (null, null);
+        }
+
+        var endpoints = _endpoints
+            .Where(e => e.IsActive && !string.IsNullOrEmpty(e.IpRange))
+            .OrderByDescending(e => e.Priority)
+            .ToList();
+
+        foreach (var endpoint in endpoints)
+        {
+            if (IsIpInRange(ip, endpoint.IpRange!))
+            {
+                return (endpoint.ServiceName, endpoint.ServiceCategory);
+            }
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Checks if hostname matches a domain pattern
+    /// </summary>
+    private bool IsHostnameMatch(string hostname, string pattern)
+    {
         try
         {
-            result = GetExtendedTcpTable(tcpTablePtr, ref bufferSize, true, 
-                (int)addressFamily, tableClass, 0);
+            // Convert wildcard pattern to regex
+            var regexPattern = "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$";
+            return Regex.IsMatch(hostname, regexPattern, RegexOptions.IgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to match hostname {Hostname} against pattern {Pattern}", hostname, pattern);
+            return false;
+        }
+    }
 
-            if (result != 0)
+    /// <summary>
+    /// Checks if IP address is within a CIDR range
+    /// </summary>
+    private bool IsIpInRange(IPAddress ip, string cidrRange)
+    {
+        try
+        {
+            var parts = cidrRange.Split('/');
+            if (parts.Length != 2) return false;
+
+            if (!IPAddress.TryParse(parts[0], out var networkAddress) || 
+                !int.TryParse(parts[1], out var prefixLength))
             {
-                _logger.LogWarning("Failed to get TCP table data. Error: {Error}", result);
-                return connections;
+                return false;
             }
 
-            if (addressFamily == AddressFamily.IPv4)
+            // Ensure IP address families match
+            if (ip.AddressFamily != networkAddress.AddressFamily)
             {
-                connections.AddRange(ParseTcpTable4(tcpTablePtr));
+                return false;
+            }
+
+            var ipBytes = ip.GetAddressBytes();
+            var networkBytes = networkAddress.GetAddressBytes();
+
+            if (ipBytes.Length != networkBytes.Length)
+            {
+                return false;
+            }
+
+            var bytesToCheck = prefixLength / 8;
+            var bitsToCheck = prefixLength % 8;
+
+            // Check full bytes
+            for (int i = 0; i < bytesToCheck; i++)
+            {
+                if (ipBytes[i] != networkBytes[i])
+                {
+                    return false;
+                }
+            }
+
+            // Check remaining bits in the last byte
+            if (bitsToCheck > 0 && bytesToCheck < ipBytes.Length)
+            {
+                var mask = (byte)(0xFF << (8 - bitsToCheck));
+                if ((ipBytes[bytesToCheck] & mask) != (networkBytes[bytesToCheck] & mask))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check if IP {IP} is in range {Range}", ip, cidrRange);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Resolves hostname from IP address with caching
+    /// </summary>
+    private async Task<string?> ResolveHostnameAsync(string ipAddress)
+    {
+        try
+        {
+            // Check cache first
+            if (_dnsCache.TryGetValue(ipAddress, out var cachedHostname) &&
+                _dnsCacheTimestamps.TryGetValue(ipAddress, out var cacheTime) &&
+                DateTime.UtcNow - cacheTime < _dnsCacheExpiry)
+            {
+                return cachedHostname;
+            }
+
+            if (!IPAddress.TryParse(ipAddress, out var ip))
+            {
+                return null;
+            }
+
+            // Perform DNS lookup
+            var hostEntry = await Dns.GetHostEntryAsync(ip);
+            var hostname = hostEntry.HostName?.ToLowerInvariant();
+
+            if (!string.IsNullOrEmpty(hostname))
+            {
+                _dnsCache[ipAddress] = hostname;
+                _dnsCacheTimestamps[ipAddress] = DateTime.UtcNow;
+            }
+
+            return hostname;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to resolve hostname for IP {IP}", ipAddress);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Ensures Microsoft endpoints are loaded from database
+    /// </summary>
+    private async Task EnsureEndpointsLoadedAsync()
+    {
+        if (DateTime.UtcNow - _lastEndpointUpdate < _endpointCacheExpiry && _endpoints.Any())
+        {
+            return;
+        }
+
+        try
+        {
+            _endpoints = await _context.MicrosoftEndpoints
+                .Where(e => e.IsActive)
+                .OrderByDescending(e => e.Priority)
+                .ToListAsync();
+
+            _lastEndpointUpdate = DateTime.UtcNow;
+            _logger.LogDebug("Loaded {Count} Microsoft endpoints from database", _endpoints.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load Microsoft endpoints from database");
+        }
+    }
+
+    /// <summary>
+    /// Adds or updates a Microsoft endpoint definition
+    /// </summary>
+    public async Task<bool> AddOrUpdateEndpointAsync(MicrosoftEndpoint endpoint)
+    {
+        try
+        {
+            var existing = await _context.MicrosoftEndpoints
+                .FirstOrDefaultAsync(e => 
+                    e.IpRange == endpoint.IpRange && 
+                    e.DomainPattern == endpoint.DomainPattern &&
+                    e.ServiceName == endpoint.ServiceName);
+
+            if (existing != null)
+            {
+                existing.ServiceCategory = endpoint.ServiceCategory;
+                existing.Description = endpoint.Description;
+                existing.Priority = endpoint.Priority;
+                existing.IsActive = endpoint.IsActive;
+                existing.LastUpdated = DateTime.UtcNow;
             }
             else
             {
-                connections.AddRange(ParseTcpTable6(tcpTablePtr));
+                endpoint.CreatedAt = DateTime.UtcNow;
+                endpoint.LastUpdated = DateTime.UtcNow;
+                _context.MicrosoftEndpoints.Add(endpoint);
             }
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(tcpTablePtr);
-        }
 
-        return connections;
+            await _context.SaveChangesAsync();
+            
+            // Force reload of endpoints
+            _lastEndpointUpdate = DateTime.MinValue;
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to add/update Microsoft endpoint");
+            return false;
+        }
     }
 
-    private List<NetworkConnection> ParseTcpTable4(IntPtr tcpTablePtr)
-    {
-        var connections = new List<NetworkConnection>();
-        var table = Marshal.PtrToStructure<MIB_TCPTABLE_OWNER_PID>(tcpTablePtr);
-
-        var rowPtr = IntPtr.Add(tcpTablePtr, Marshal.SizeOf<uint>());
-        var rowSize = Marshal.SizeOf<MIB_TCPROW_OWNER_PID>();
-
-        for (int i = 0; i < table.dwNumEntries; i++)
-        {
-            var row = Marshal.PtrToStructure<MIB_TCPROW_OWNER_PID>(rowPtr);
-            var connection = CreateConnectionFromRow4(row);
-            if (connection != null)
-            {
-                connections.Add(connection);
-            }
-            rowPtr = IntPtr.Add(rowPtr, rowSize);
-        }
-
-        return connections;
-    }
-
-    private List<NetworkConnection> ParseTcpTable6(IntPtr tcpTablePtr)
-    {
-        var connections = new List<NetworkConnection>();
-        var table = Marshal.PtrToStructure<MIB_TCP6TABLE_OWNER_PID>(tcpTablePtr);
-
-        var rowPtr = IntPtr.Add(tcpTablePtr, Marshal.SizeOf<uint>());
-        var rowSize = Marshal.SizeOf<MIB_TCP6ROW_OWNER_PID>();
-
-        for (int i = 0; i < table.dwNumEntries; i++)
-        {
-            var row = Marshal.PtrToStructure<MIB_TCP6ROW_OWNER_PID>(rowPtr);
-            var connection = CreateConnectionFromRow6(row);
-            if (connection != null)
-            {
-                connections.Add(connection);
-            }
-            rowPtr = IntPtr.Add(rowPtr, rowSize);
-        }
-
-        return connections;
-    }
-
-    private NetworkConnection? CreateConnectionFromRow4(MIB_TCPROW_OWNER_PID row)
+    /// <summary>
+    /// Gets service statistics for Microsoft endpoints
+    /// </summary>
+    public async Task<List<ServiceStatistics>> GetServiceStatisticsAsync(DateTime? startTime = null, DateTime? endTime = null)
     {
         try
         {
-            var processInfo = GetProcessInfo((int)row.dwOwningPid);
-            if (processInfo == null) return null;
+            var query = _context.Connections
+                .Where(c => !string.IsNullOrEmpty(c.MicrosoftService));
 
-            var localEndpoint = new IPEndPoint(row.dwLocalAddr, ConvertPort(row.dwLocalPort));
-            var remoteEndpoint = new IPEndPoint(row.dwRemoteAddr, ConvertPort(row.dwRemotePort));
+            if (startTime.HasValue)
+            {
+                query = query.Where(c => c.EstablishedTime >= startTime.Value);
+            }
+
+            if (endTime.HasValue)
+            {
+                query = query.Where(c => c.EstablishedTime <= endTime.Value);
+            }
+
+            var statistics = await query
+                .GroupBy(c => new { c.MicrosoftService, c.ServiceCategory })
+                .Select(g => new ServiceStatistics
+                {
+                    ServiceName = g.Key.MicrosoftService!,
+                    ServiceCategory = g.Key.ServiceCategory,
+                    ConnectionCount = g.Count(),
+                    TotalBytes = g.Sum(c => c.BytesSent + c.BytesReceived),
+                    AverageDurationMs = g.Average(c => c.DurationMs ?? 0),
+                    FirstConnection = g.Min(c => c.EstablishedTime),
+                    LastActivity = g.Max(c => c.LastActivityTime),
+                    ProcessesUsing = g.Select(c => c.ProcessName).Distinct().ToList()
+                })
+                .OrderByDescending(s => s.TotalBytes)
+                .ToListAsync();
+
+            return statistics;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get service statistics");
+            return new List<ServiceStatistics>();
+        }
+    }
+
+    /// <summary>
+    /// Clears DNS resolution cache
+    /// </summary>
+    public void ClearDnsCache()
+    {
+        _dnsCache.Clear();
+        _dnsCacheTimestamps.Clear();
+        _logger.LogDebug("DNS cache cleared");
+    }
+
+    /// <summary>
+    /// Gets cache statistics for monitoring
+    /// </summary>
+    public (int EndpointsCount, int DnsCacheSize, DateTime LastEndpointUpdate) GetCacheStats()
+    {
+        return (_endpoints.Count, _dnsCache.Count, _lastEndpointUpdate);
+    }
+
+    /// <summary>
+    /// Checks if a process is likely a Microsoft application
+    /// </summary>
+    public bool IsMicrosoftProcess(string processName, string? processPath = null)
+    {
+        if (string.IsNullOrEmpty(processName))
+            return false;
+
+        var microsoftProcesses = new[]
+        {
+            "teams", "outlook", "winword", "excel", "powerpnt", "msedge", "msedgewebview2",
+            "onedrive", "skype", "lync", "communicator", "microsoftedge", "iexplore",
+            "onenotem", "onenote", "msteams", "ms-teams", "microsoftteams",
+            "windowsstore", "calculator", "notepad", "paint", "mspaint",
+            "svchost", "dwm", "csrss", "winlogon", "explorer", "conhost"
+        };
+
+        var processNameLower = processName.ToLowerInvariant();
+        
+        // Check against known Microsoft process names
+        if (microsoftProcesses.Any(mp => processNameLower.Contains(mp)))
+        {
+            return true;
+        }
+
+        // Check path if available
+        if (!string.IsNullOrEmpty(processPath))
+        {
+            var pathLower = processPath.ToLowerInvariant();
+            if (pathLower.Contains("microsoft") || 
+                pathLower.Contains("windows") ||
+                pathLower.Contains("program files\\microsoft") ||
+                pathLower.Contains("program files (x86)\\microsoft"))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

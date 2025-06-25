@@ -1,7 +1,6 @@
 # Microsoft Endpoint Monitor
 
-A real-time network monitoring solution that tracks and visualizes connections to Microsoft services and endpoints, similar to GlassWire but focused specifically on Microsoft infrastructure.
-
+A real-time network monitoring solution that tracks and visualizes connections to Microsoft services and endpoints.
 ## Features
 
 - **Real-time Network Monitoring**: Track active connections to Microsoft services

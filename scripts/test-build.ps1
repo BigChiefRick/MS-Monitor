@@ -192,7 +192,11 @@ if (Test-Path $serviceExePath) {
             $process.Kill()
             Add-TestResult "Service - Startup Test" "PASS" "Service started successfully" 0
         } else {
-            $errorContent = if (Test-Path "$env:TEMP\service_error.log") { Get-Content "$env:TEMP\service_error.log" -Raw } else "No error log"
+            $errorContent = if (Test-Path "$env:TEMP\service_error.log") { 
+                Get-Content "$env:TEMP\service_error.log" -Raw 
+            } else { 
+                "No error log" 
+            }
             throw "Service exited immediately: $errorContent"
         }
     } "Service - Startup Test"
@@ -539,7 +543,7 @@ if ($GenerateReport) {
 }
 
 Write-Host ""
-Write-Host "=== Build & Test Validation Complete ===" -ForegroundColor Cyan
+Write-Host "=== Build and Test Validation Complete ===" -ForegroundColor Cyan
 
 # Exit with appropriate code
 exit $(if ($failedTests -eq 0) { 0 } else { 1 })

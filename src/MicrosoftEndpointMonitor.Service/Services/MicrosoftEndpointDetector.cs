@@ -62,14 +62,31 @@ namespace MicrosoftEndpointMonitor.Service.Services
         {
             var process = processName.ToLower();
             
-            // Process-based classification (most specific)
-            if (process.Contains("teams")) return "Microsoft Teams";
-            if (process.Contains("outlook")) return "Microsoft Outlook";
-            if (process.Contains("onedrive")) return "Microsoft OneDrive";
-            if (process.Contains("excel") || process.Contains("word") || process.Contains("powerpoint")) 
-                return "Microsoft Office";
-            if (process.Contains("edge") || process.Contains("msedge")) return "Microsoft Edge";
-            if (process.Contains("skype")) return "Skype for Business";
+            // Enhanced process-based classification with higher priority
+            if (process.Contains("teams") || process.Contains("msteams")) 
+                return "Microsoft Teams";
+            if (process.Contains("outlook") || process.Contains("msoutlook")) 
+                return "Microsoft Outlook";
+            if (process.Contains("onedrive") || process.Contains("microsoftonedrive")) 
+                return "Microsoft OneDrive";
+            if (process.Contains("sharepoint") || process.Contains("microsoftsharepoint")) 
+                return "Microsoft SharePoint";
+            if (process.Contains("excel")) return "Microsoft Excel";
+            if (process.Contains("winword") || process.Contains("word")) return "Microsoft Word";
+            if (process.Contains("powerpnt") || process.Contains("powerpoint")) return "Microsoft PowerPoint";
+            if (process.Contains("msaccess") || process.Contains("access")) return "Microsoft Access";
+            if (process.Contains("onenote")) return "Microsoft OneNote";
+            if (process.Contains("skype") || process.Contains("lync")) return "Skype for Business";
+            if (process.Contains("groove")) return "Microsoft Groove";
+            if (process.Contains("officeclicktorun")) return "Microsoft Office (Update)";
+            if (process.Contains("officefilesync")) return "Microsoft Office (Sync)";
+            
+            // Browser processes get lower priority
+            if (process.Contains("msedge") && !process.Contains("webview")) return "Microsoft Edge";
+            if (process.Contains("msedgewebview2")) return "Microsoft Edge WebView";
+            
+            // Generic Office processes
+            if (process.Contains("office") || process.Contains("mso")) return "Microsoft Office";
             
             // Use detected service name if process classification fails
             return detectedService;
@@ -79,12 +96,27 @@ namespace MicrosoftEndpointMonitor.Service.Services
         {
             return new HashSet<string>
             {
+                // Core Microsoft domains
                 "microsoft.com", "microsoftonline.com", "office.com", "office365.com",
                 "outlook.com", "hotmail.com", "live.com", "msn.com",
-                "teams.microsoft.com", "graph.microsoft.com", "login.microsoftonline.com",
+                
+                // Teams specific
+                "teams.microsoft.com", "teams.live.com", "teams.office.com",
+                
+                // Office 365 & SharePoint
+                "sharepoint.com", "officeapps.live.com", "outlook.office.com",
+                "login.microsoftonline.com", "graph.microsoft.com",
+                
+                // OneDrive
+                "onedrive.com", "onedrive.live.com", "files.1drv.com",
+                
+                // Azure & cloud services
                 "azure.com", "azurewebsites.net", "blob.core.windows.net",
-                "onedrive.com", "sharepoint.com", "dynamics.com",
-                "xbox.com", "skype.com", "bing.com"
+                "servicebus.windows.net", "database.windows.net",
+                
+                // Other Microsoft services
+                "xbox.com", "skype.com", "bing.com", "msedge.net",
+                "visualstudio.com", "github.com"
             };
         }
 
@@ -92,16 +124,40 @@ namespace MicrosoftEndpointMonitor.Service.Services
         {
             return new Dictionary<string, string>
             {
+                // Teams patterns
                 { "teams", "Microsoft Teams" },
+                { "teams.microsoft", "Microsoft Teams" },
+                { "teams.live", "Microsoft Teams" },
+                
+                // Outlook & Exchange
                 { "outlook", "Microsoft Outlook" },
+                { "exchange", "Microsoft Exchange" },
+                { "mail", "Microsoft Outlook" },
+                
+                // OneDrive & SharePoint
                 { "onedrive", "Microsoft OneDrive" },
                 { "sharepoint", "Microsoft SharePoint" },
+                { "files.1drv", "Microsoft OneDrive" },
+                
+                // Office apps
                 { "office", "Microsoft Office 365" },
-                { "graph", "Microsoft Graph API" },
+                { "officeapps", "Microsoft Office" },
+                { "excel", "Microsoft Excel" },
+                { "word", "Microsoft Word" },
+                { "powerpoint", "Microsoft PowerPoint" },
+                
+                // Authentication & Graph
                 { "login", "Microsoft Authentication" },
+                { "graph", "Microsoft Graph API" },
+                
+                // Azure services
                 { "azure", "Microsoft Azure" },
+                { "servicebus", "Azure Service Bus" },
+                { "blob.core", "Azure Blob Storage" },
+                
+                // Communication
                 { "skype", "Skype for Business" },
-                { "exchange", "Microsoft Exchange" }
+                { "lync", "Skype for Business" }
             };
         }
 
@@ -109,12 +165,21 @@ namespace MicrosoftEndpointMonitor.Service.Services
         {
             var ranges = new Dictionary<string, (IPAddress, IPAddress)>();
             
-            // Major Microsoft IP ranges (simplified for demonstration)
+            // Comprehensive Microsoft IP ranges
             ranges["Microsoft Teams"] = (IPAddress.Parse("52.108.0.0"), IPAddress.Parse("52.108.255.255"));
             ranges["Microsoft Office 365"] = (IPAddress.Parse("52.96.0.0"), IPAddress.Parse("52.127.255.255"));
             ranges["Microsoft Azure"] = (IPAddress.Parse("20.0.0.0"), IPAddress.Parse("20.255.255.255"));
             ranges["Microsoft OneDrive"] = (IPAddress.Parse("52.121.0.0"), IPAddress.Parse("52.121.255.255"));
             ranges["Microsoft Exchange Online"] = (IPAddress.Parse("40.92.0.0"), IPAddress.Parse("40.107.255.255"));
+            ranges["Microsoft SharePoint"] = (IPAddress.Parse("52.244.0.0"), IPAddress.Parse("52.244.255.255"));
+            ranges["Microsoft Graph API"] = (IPAddress.Parse("40.126.0.0"), IPAddress.Parse("40.126.255.255"));
+            ranges["Microsoft Authentication"] = (IPAddress.Parse("40.124.0.0"), IPAddress.Parse("40.124.255.255"));
+            ranges["Skype for Business"] = (IPAddress.Parse("52.114.0.0"), IPAddress.Parse("52.114.255.255"));
+            ranges["Microsoft Edge Update"] = (IPAddress.Parse("13.107.42.0"), IPAddress.Parse("13.107.42.255"));
+            
+            // Additional Azure ranges
+            ranges["Azure West US"] = (IPAddress.Parse("13.91.0.0"), IPAddress.Parse("13.91.255.255"));
+            ranges["Azure East US"] = (IPAddress.Parse("52.168.0.0"), IPAddress.Parse("52.168.255.255"));
             
             return ranges;
         }

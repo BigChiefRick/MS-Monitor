@@ -1,367 +1,561 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Microsoft Endpoint Monitor</title>
-    <link rel="stylesheet" href="styles/main.css">
-    <link rel="stylesheet" href="styles/dashboard.css">
-    <link rel="stylesheet" href="styles/components.css">
+    
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    
+    <style>
+        :root {
+            /* Light mode colors */
+            --bg-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --bg-secondary: rgba(255, 255, 255, 0.95);
+            --text-primary: #333;
+            --text-secondary: #6c757d;
+            --text-accent: #2c3e50;
+            --border-color: rgba(255,255,255,0.2);
+            --shadow: rgba(0,0,0,0.1);
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --table-bg: #f8f9fa;
+            --table-border: #e9ecef;
+        }
+
+        [data-theme="dark"] {
+            /* Dark mode colors */
+            --bg-primary: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            --bg-secondary: rgba(45, 52, 64, 0.95);
+            --text-primary: #ecf0f1;
+            --text-secondary: #bdc3c7;
+            --text-accent: #ecf0f1;
+            --border-color: rgba(255,255,255,0.1);
+            --shadow: rgba(0,0,0,0.3);
+            --card-bg: rgba(52, 73, 94, 0.95);
+            --table-bg: #34495e;
+            --table-border: #2c3e50;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow-x: hidden;
+        }
+
+        .header {
+            background: var(--bg-secondary);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 20px var(--shadow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo h1 {
+            color: var(--text-accent);
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .theme-toggle {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .theme-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--card-bg);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #dc3545;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected { background: #28a745; }
+        .status-indicator.connecting { background: #ffc107; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px var(--shadow);
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text-accent);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+
+        .panel-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--text-accent);
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .refresh-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--table-border);
+        }
+
+        th {
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: var(--table-bg);
+        }
+
+        .service-badge {
+            background: #007bff;
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-established { background: #d4edda; color: #155724; }
+        .status-timewait { background: #fff3cd; color: #856404; }
+        .status-active { background: #d4edda; color: #155724; }
+
+        .latency {
+            font-weight: 600;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+
+        .latency.good { background: #d4edda; color: #155724; }
+        .latency.fair { background: #fff3cd; color: #856404; }
+        .latency.poor { background: #f8d7da; color: #721c24; }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+        }
+
+        .chart-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+
+        .chart-canvas {
+            max-height: 300px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 1rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+
+        /* Dark mode specific adjustments */
+        [data-theme="dark"] .alert-info {
+            background: #1e3a42;
+            color: #7dd3fc;
+        }
+
+        [data-theme="dark"] .alert-warning {
+            background: #3a2f1a;
+            color: #fbbf24;
+        }
+
+        [data-theme="dark"] .alert-error {
+            background: #3a1f1f;
+            color: #f87171;
+        }
+
+        [data-theme="dark"] .service-badge {
+            background: #3b82f6;
+        }
+
+        [data-theme="dark"] .status-established {
+            background: #1f4d2e;
+            color: #86efac;
+        }
+
+        [data-theme="dark"] .status-timewait {
+            background: #3d2f1a;
+            color: #fbbf24;
+        }
+
+        [data-theme="dark"] .status-active {
+            background: #1f4d2e;
+            color: #86efac;
+        }
+
+        [data-theme="dark"] .latency.good {
+            background: #1f4d2e;
+            color: #86efac;
+        }
+
+        [data-theme="dark"] .latency.fair {
+            background: #3d2f1a;
+            color: #fbbf24;
+        }
+
+        [data-theme="dark"] .latency.poor {
+            background: #3a1f1f;
+            color: #f87171;
+        }
+
+        @media (max-width: 768px) {
+            .content-grid,
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .header-controls {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+        }
+
+        /* Loading animation */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--text-secondary);
+            border-radius: 50%;
+            border-top-color: var(--text-accent);
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
-    <div id="app">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-left">
-                <img src="assets/icon.png" alt="Logo" class="logo">
-                <h1>Microsoft Endpoint Monitor</h1>
+    <header class="header">
+        <div class="logo">
+            <h1>🔍 Microsoft Endpoint Monitor</h1>
+        </div>
+        <div class="header-controls">
+            <button class="theme-toggle" onclick="toggleTheme()">
+                <span id="themeIcon">🌙</span>
+                <span id="themeText">Dark Mode</span>
+            </button>
+            <div class="connection-status">
+                <div id="statusIndicator" class="status-indicator"></div>
+                <span id="connectionStatus">Connecting...</span>
+                <span style="margin-left: 10px; font-size: 0.8rem;">
+                    Last: <span id="lastRefresh">Never</span>
+                </span>
             </div>
-            <div class="header-center">
-                <div class="connection-status" id="connection-status">
-                    <span class="status-indicator" id="status-indicator"></span>
-                    <span class="status-text" id="status-text">Connecting...</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Dashboard Stats -->
+        <div class="dashboard-grid">
+            <div class="stat-card">
+                <div id="totalConnections" class="stat-value">
+                    <div class="loading"></div>
                 </div>
+                <div class="stat-label">Total Connections</div>
             </div>
-            <div class="header-right">
-                <div class="header-stats">
-                    <div class="stat">
-                        <span class="stat-label">Active Connections</span>
-                        <span class="stat-value" id="active-connections">0</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">Microsoft Services</span>
-                        <span class="stat-value" id="microsoft-connections">0</span>
-                    </div>
+            <div class="stat-card">
+                <div id="microsoftConnections" class="stat-value">
+                    <div class="loading"></div>
                 </div>
+                <div class="stat-label">Microsoft Endpoints</div>
             </div>
-        </header>
-
-        <!-- Navigation -->
-        <nav class="sidebar">
-            <ul class="nav-menu">
-                <li class="nav-item active" data-page="dashboard">
-                    <i class="icon">📊</i>
-                    <span>Dashboard</span>
-                </li>
-                <li class="nav-item" data-page="connections">
-                    <i class="icon">🔗</i>
-                    <span>Connections</span>
-                </li>
-                <li class="nav-item" data-page="services">
-                    <i class="icon">🏢</i>
-                    <span>Services</span>
-                </li>
-                <li class="nav-item" data-page="alerts">
-                    <i class="icon">🚨</i>
-                    <span>Alerts</span>
-                    <span class="badge" id="alerts-badge" style="display: none;">0</span>
-                </li>
-                <li class="nav-item" data-page="processes">
-                    <i class="icon">⚙️</i>
-                    <span>Processes</span>
-                </li>
-                <li class="nav-item" data-page="settings">
-                    <i class="icon">⚙️</i>
-                    <span>Settings</span>
-                </li>
-            </ul>
-        </nav>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Dashboard Page -->
-            <div id="dashboard-page" class="page active">
-                <div class="page-header">
-                    <h2>Dashboard</h2>
-                    <div class="page-actions">
-                        <button class="btn btn-primary" id="refresh-btn">
-                            <i class="icon">🔄</i>
-                            Refresh
-                        </button>
-                        <button class="btn btn-secondary" id="export-btn">
-                            <i class="icon">📥</i>
-                            Export
-                        </button>
-                    </div>
+            <div class="stat-card">
+                <div id="activeServices" class="stat-value">
+                    <div class="loading"></div>
                 </div>
-
-                <div class="dashboard-grid">
-                    <!-- Key Metrics -->
-                    <div class="metric-cards">
-                        <div class="metric-card">
-                            <div class="metric-icon">🔗</div>
-                            <div class="metric-content">
-                                <div class="metric-value" id="metric-total-connections">0</div>
-                                <div class="metric-label">Total Connections</div>
-                            </div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-icon">🏢</div>
-                            <div class="metric-content">
-                                <div class="metric-value" id="metric-microsoft-connections">0</div>
-                                <div class="metric-label">Microsoft Services</div>
-                            </div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-icon">📈</div>
-                            <div class="metric-content">
-                                <div class="metric-value" id="metric-bandwidth">0 KB/s</div>
-                                <div class="metric-label">Current Bandwidth</div>
-                            </div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-icon">🚨</div>
-                            <div class="metric-content">
-                                <div class="metric-value" id="metric-alerts">0</div>
-                                <div class="metric-label">Active Alerts</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Real-time Chart -->
-                    <div class="chart-container">
-                        <h3>Network Activity</h3>
-                        <canvas id="activity-chart" width="400" height="200"></canvas>
-                    </div>
-
-                    <!-- Service Statistics -->
-                    <div class="service-stats">
-                        <h3>Top Microsoft Services</h3>
-                        <div id="service-list" class="service-list">
-                            <!-- Services will be populated here -->
-                        </div>
-                    </div>
-
-                    <!-- Recent Connections -->
-                    <div class="recent-connections">
-                        <h3>Recent Connections</h3>
-                        <div class="table-container">
-                            <table id="recent-connections-table">
-                                <thead>
-                                    <tr>
-                                        <th>Time</th>
-                                        <th>Process</th>
-                                        <th>Service</th>
-                                        <th>Remote Host</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <!-- Connections will be populated here -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Recent Alerts -->
-                    <div class="recent-alerts">
-                        <h3>Recent Alerts</h3>
-                        <div id="alert-list" class="alert-list">
-                            <!-- Alerts will be populated here -->
-                        </div>
-                    </div>
+                <div class="stat-label">Active Services</div>
+            </div>
+            <div class="stat-card">
+                <div id="averageLatency" class="stat-value">
+                    <div class="loading"></div>
                 </div>
+                <div class="stat-label">Average Latency</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h3 class="panel-title">Latency Trend</h3>
+                <canvas id="latencyChart" class="chart-canvas"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="panel-title">Connection Distribution</h3>
+                <canvas id="connectionsChart" class="chart-canvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Data Tables -->
+        <div class="content-grid">
+            <div class="panel">
+                <div class="panel-title">
+                    Recent Microsoft Connections
+                    <button id="refreshBtn" class="refresh-btn">
+                        <span id="refreshIcon">🔄</span> Refresh
+                    </button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th>Process</th>
+                            <th>Endpoint</th>
+                            <th>Latency</th>
+                            <th>Status</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="connectionsTableBody">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: var(--text-secondary);">
+                                <div class="loading" style="margin: 1rem auto;"></div>
+                                Loading data...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
-            <!-- Connections Page -->
-            <div id="connections-page" class="page">
-                <div class="page-header">
-                    <h2>Network Connections</h2>
-                    <div class="page-actions">
-                        <div class="filter-controls">
-                            <input type="text" id="connection-filter" placeholder="Filter by process or service...">
-                            <select id="service-filter">
-                                <option value="">All Services</option>
-                            </select>
-                            <select id="state-filter">
-                                <option value="">All States</option>
-                                <option value="ESTABLISHED">Established</option>
-                                <option value="LISTENING">Listening</option>
-                                <option value="CLOSED">Closed</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="table-container">
-                    <table id="connections-table" class="data-table">
-                        <thead>
-                            <tr>
-                                <th class="sortable" data-sort="processName">Process</th>
-                                <th class="sortable" data-sort="microsoftService">Service</th>
-                                <th class="sortable" data-sort="remoteHost">Remote Host</th>
-                                <th class="sortable" data-sort="remotePort">Port</th>
-                                <th class="sortable" data-sort="connectionState">State</th>
-                                <th class="sortable" data-sort="totalBytes">Data</th>
-                                <th class="sortable" data-sort="establishedTime">Established</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Connections will be populated here -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="pagination">
-                    <button id="prev-page" class="btn btn-secondary">Previous</button>
-                    <span id="page-info">Page 1 of 1</span>
-                    <button id="next-page" class="btn btn-secondary">Next</button>
-                </div>
+            <div class="panel">
+                <div class="panel-title">Active Microsoft Services</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th>Connections</th>
+                            <th>Processes</th>
+                            <th>Avg Latency</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="servicesTableBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: var(--text-secondary);">
+                                <div class="loading" style="margin: 1rem auto;"></div>
+                                Loading services...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
+        </div>
 
-            <!-- Services Page -->
-            <div id="services-page" class="page">
-                <div class="page-header">
-                    <h2>Microsoft Services</h2>
-                    <div class="page-actions">
-                        <select id="time-range-filter">
-                            <option value="1h">Last Hour</option>
-                            <option value="24h" selected>Last 24 Hours</option>
-                            <option value="7d">Last 7 Days</option>
-                            <option value="30d">Last 30 Days</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="services-grid">
-                    <!-- Service cards will be populated here -->
-                </div>
-            </div>
-
-            <!-- Alerts Page -->
-            <div id="alerts-page" class="page">
-                <div class="page-header">
-                    <h2>Alerts & Notifications</h2>
-                    <div class="page-actions">
-                        <button class="btn btn-primary" id="acknowledge-all-btn">
-                            Acknowledge All
-                        </button>
-                        <select id="alert-severity-filter">
-                            <option value="">All Severities</option>
-                            <option value="INFO">Info</option>
-                            <option value="WARNING">Warning</option>
-                            <option value="ERROR">Error</option>
-                            <option value="CRITICAL">Critical</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="alerts-container">
-                    <!-- Alerts will be populated here -->
-                </div>
-            </div>
-
-            <!-- Processes Page -->
-            <div id="processes-page" class="page">
-                <div class="page-header">
-                    <h2>Network Processes</h2>
-                    <div class="page-actions">
-                        <label class="checkbox-container">
-                            <input type="checkbox" id="microsoft-only-filter">
-                            Microsoft Apps Only
-                        </label>
-                    </div>
-                </div>
-
-                <div class="table-container">
-                    <table id="processes-table" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Process Name</th>
-                                <th>PID</th>
-                                <th>Path</th>
-                                <th>Microsoft App</th>
-                                <th>Connections</th>
-                                <th>Last Seen</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Processes will be populated here -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Settings Page -->
-            <div id="settings-page" class="page">
-                <div class="page-header">
-                    <h2>Settings</h2>
-                </div>
-
-                <div class="settings-container">
-                    <div class="settings-section">
-                        <h3>Monitoring Configuration</h3>
-                        <div class="setting-item">
-                            <label for="polling-interval">Polling Interval (ms)</label>
-                            <input type="number" id="polling-interval" min="1000" max="60000" value="5000">
-                        </div>
-                        <div class="setting-item">
-                            <label class="checkbox-container">
-                                <input type="checkbox" id="microsoft-only" checked>
-                                Monitor Microsoft Endpoints Only
-                            </label>
-                        </div>
-                        <div class="setting-item">
-                            <label class="checkbox-container">
-                                <input type="checkbox" id="enable-alerts" checked>
-                                Enable Alerts
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="settings-section">
-                        <h3>Data Management</h3>
-                        <div class="setting-item">
-                            <label for="history-days">Keep History (days)</label>
-                            <input type="number" id="history-days" min="1" max="365" value="30">
-                        </div>
-                        <div class="setting-item">
-                            <button class="btn btn-danger" id="clear-data-btn">
-                                Clear All Data
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="settings-section">
-                        <h3>UI Preferences</h3>
-                        <div class="setting-item">
-                            <label for="refresh-interval">UI Refresh Rate (ms)</label>
-                            <input type="number" id="refresh-interval" min="500" max="10000" value="1000">
-                        </div>
-                        <div class="setting-item">
-                            <label for="theme-select">Theme</label>
-                            <select id="theme-select">
-                                <option value="dark">Dark</option>
-                                <option value="light">Light</option>
-                                <option value="auto">Auto</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="settings-actions">
-                        <button class="btn btn-primary" id="save-settings-btn">
-                            Save Settings
-                        </button>
-                        <button class="btn btn-secondary" id="reset-settings-btn">
-                            Reset to Defaults
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </main>
+        <!-- Alerts Container -->
+        <div id="alertsContainer"></div>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="loading-overlay">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">Loading...</div>
-    </div>
+    <footer class="footer">
+        Microsoft Endpoint Monitor - Real-time network monitoring for Microsoft services
+    </footer>
 
-    <!-- Scripts -->
-    <script src="node_modules/chart.js/dist/chart.min.js"></script>
-    <script src="node_modules/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="node_modules/@microsoft/signalr/dist/browser/signalr.min.js"></script>
+    <script>
+        // Theme management
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            
+            const themeIcon = document.getElementById('themeIcon');
+            const themeText = document.getElementById('themeText');
+            
+            if (newTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            } else {
+                themeIcon.textContent = '🌙';
+                themeText.textContent = 'Dark Mode';
+            }
+            
+            // Save preference
+            localStorage.setItem('theme', newTheme);
+            
+            // Update charts if they exist
+            if (window.latencyChart) {
+                window.latencyChart.update();
+            }
+            if (window.connectionsChart) {
+                window.connectionsChart.update();
+            }
+        }
+
+        // Load saved theme
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            
+            if (savedTheme === 'dark') {
+                document.getElementById('themeIcon').textContent = '☀️';
+                document.getElementById('themeText').textContent = 'Light Mode';
+            }
+        });
+    </script>
     <script src="renderer.js"></script>
 </body>
 </html>

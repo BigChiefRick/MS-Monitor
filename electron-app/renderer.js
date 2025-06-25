@@ -1,663 +1,424 @@
-// Microsoft Endpoint Monitor - Electron Renderer Process
-// Handles UI interactions and SignalR communication
-
-const { ipcRenderer } = require('electron');
-
-// Application state
-let signalRConnection = null;
-let isConnected = false;
-let currentPage = 'dashboard';
-let connectionData = [];
-let serviceData = [];
-let alertData = [];
-let dashboardChart = null;
+﻿// Microsoft Endpoint Monitor - Real-time Renderer
+console.log('Microsoft Endpoint Monitor renderer starting...');
 
 // Configuration
 const API_BASE_URL = 'http://localhost:5000';
-const SIGNALR_HUB_URL = `${API_BASE_URL}/networkhub`;
-const UI_REFRESH_INTERVAL = 1000;
+const SIGNALR_HUB_URL = 'http://localhost:5000/networkhub';
 
-// Initialize application when DOM is ready
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log('Microsoft Endpoint Monitor starting...');
+// Global state
+let connection = null;
+let connectionStatus = 'Disconnected';
+let dashboardData = {
+    totalConnections: 0,
+    microsoftConnections: 0,
+    activeServices: [],
+    recentConnections: []
+};
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, initializing Microsoft Endpoint Monitor...');
     
-    await initializeSignalR();
     initializeUI();
-    startUIRefreshTimer();
+    connectToSignalR();
+    startDataPolling();
     
-    // Load initial data
-    await loadDashboardData();
+    // Initialize charts
+    initializeCharts();
 });
 
-// SignalR Connection Management
-async function initializeSignalR() {
+function initializeUI() {
+    updateConnectionStatus('Connecting...');
+    updateDashboardStats(0, 0, 0, 0);
+    
+    // Add refresh button functionality
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            refreshData();
+        });
+    }
+}
+
+function updateConnectionStatus(status) {
+    connectionStatus = status;
+    const statusElement = document.getElementById('connectionStatus');
+    const statusIndicator = document.getElementById('statusIndicator');
+    
+    if (statusElement) {
+        statusElement.textContent = status;
+        
+        // Update status indicator color
+        if (statusIndicator) {
+            statusIndicator.className = 'status-indicator';
+            if (status === 'Connected') {
+                statusIndicator.classList.add('connected');
+            } else if (status === 'Connecting...') {
+                statusIndicator.classList.add('connecting');
+            } else {
+                statusIndicator.classList.add('disconnected');
+            }
+        }
+    }
+    
+    console.log(`Connection status: ${status}`);
+}
+
+async function connectToSignalR() {
     try {
-        updateConnectionStatus('connecting', 'Connecting to monitoring service...');
+        // Use the SignalR client library (should be included in your HTML)
+        if (typeof signalR === 'undefined') {
+            console.warn('SignalR library not loaded, falling back to polling only');
+            updateConnectionStatus('Connected (Polling Mode)');
+            return;
+        }
         
-        signalRConnection = new signalR.HubConnectionBuilder()
+        connection = new signalR.HubConnectionBuilder()
             .withUrl(SIGNALR_HUB_URL)
-            .withAutomaticReconnect([0, 2000, 10000, 30000])
+            .withAutomaticReconnect()
             .build();
-
-        // Connection event handlers
-        signalRConnection.onreconnecting(() => {
-            updateConnectionStatus('connecting', 'Reconnecting...');
-        });
-
-        signalRConnection.onreconnected(() => {
-            updateConnectionStatus('connected', 'Connected');
-            joinMonitoringGroup();
-        });
-
-        signalRConnection.onclose(() => {
-            updateConnectionStatus('disconnected', 'Disconnected');
-        });
-
-        // Data event handlers
-        signalRConnection.on('ConnectionUpdate', handleConnectionUpdate);
-        signalRConnection.on('NewAlert', handleNewAlert);
-        signalRConnection.on('DashboardUpdate', handleDashboardUpdate);
-        signalRConnection.on('ServiceStatisticsUpdate', handleServiceStatisticsUpdate);
-
-        // Start connection
-        await signalRConnection.start();
-        updateConnectionStatus('connected', 'Connected');
         
-        // Join monitoring group
-        await joinMonitoringGroup();
+        // Handle connection events
+        connection.onreconnecting((error) => {
+            console.log('SignalR reconnecting...', error);
+            updateConnectionStatus('Reconnecting...');
+        });
         
-        console.log('SignalR connection established');
+        connection.onreconnected((connectionId) => {
+            console.log('SignalR reconnected:', connectionId);
+            updateConnectionStatus('Connected');
+        });
+        
+        connection.onclose((error) => {
+            console.log('SignalR connection closed:', error);
+            updateConnectionStatus('Disconnected');
+        });
+        
+        // Handle incoming data
+        connection.on('DashboardUpdate', (data) => {
+            console.log('Received dashboard update:', data);
+            updateDashboardData(data);
+        });
+        
+        connection.on('ConnectionEvent', (event) => {
+            console.log('Received connection event:', event);
+            handleConnectionEvent(event);
+        });
+        
+        connection.on('AlertReceived', (alert) => {
+            console.log('Received alert:', alert);
+            showAlert(alert);
+        });
+        
+        // Start the connection
+        await connection.start();
+        console.log('SignalR connected successfully');
+        updateConnectionStatus('Connected');
+        
     } catch (error) {
         console.error('SignalR connection failed:', error);
-        updateConnectionStatus('disconnected', 'Connection failed');
-        
-        // Retry connection every 5 seconds
-        setTimeout(initializeSignalR, 5000);
+        updateConnectionStatus('Connected (Polling Mode)');
     }
 }
 
-async function joinMonitoringGroup() {
+async function startDataPolling() {
+    // Poll the API every 5 seconds for dashboard data
+    setInterval(async () => {
+        try {
+            await refreshData();
+        } catch (error) {
+            console.error('Error polling data:', error);
+        }
+    }, 5000);
+    
+    // Initial load
+    await refreshData();
+}
+
+async function refreshData() {
     try {
-        if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
-            await signalRConnection.invoke('JoinMonitoring');
-            console.log('Joined monitoring group');
+        // Fetch dashboard data
+        const dashboardResponse = await fetch(`${API_BASE_URL}/api/network/dashboard`);
+        if (dashboardResponse.ok) {
+            const data = await dashboardResponse.json();
+            updateDashboardData(data);
         }
+        
+        // Fetch connections
+        const connectionsResponse = await fetch(`${API_BASE_URL}/api/network/connections/microsoft`);
+        if (connectionsResponse.ok) {
+            const connections = await connectionsResponse.json();
+            updateConnectionsTable(connections);
+        }
+        
+        // Fetch services
+        const servicesResponse = await fetch(`${API_BASE_URL}/api/network/services`);
+        if (servicesResponse.ok) {
+            const services = await servicesResponse.json();
+            updateServicesTable(services);
+        }
+        
+        // Update last refresh time
+        updateLastRefreshTime();
+        
     } catch (error) {
-        console.error('Failed to join monitoring group:', error);
+        console.error('Error refreshing data:', error);
+        updateConnectionStatus('Error - Check API');
     }
 }
 
-// SignalR Event Handlers
-function handleConnectionUpdate(connectionEvent) {
-    console.log('Connection update received:', connectionEvent);
+function updateDashboardData(data) {
+    dashboardData = { ...dashboardData, ...data };
     
-    // Update connection data
-    updateConnectionInList(connectionEvent.Connection);
+    // Update stats cards
+    updateDashboardStats(
+        data.totalConnections || 0,
+        data.microsoftConnections || 0,
+        data.activeServices?.length || 0,
+        calculateAverageLatency(data.activeServices || [])
+    );
     
-    // Update dashboard metrics
-    updateDashboardMetrics();
-    
-    // Add to recent connections if new
-    if (connectionEvent.EventType === 'CONNECTED') {
-        addToRecentConnections(connectionEvent.Connection);
-    }
+    // Update charts if they exist
+    updateLatencyChart(data.activeServices || []);
+    updateConnectionsChart(data);
 }
 
-function handleNewAlert(alert) {
-    console.log('New alert received:', alert);
-    
-    // Add to alert list
-    alertData.unshift(alert);
-    
-    // Update alerts badge
-    updateAlertsBadge();
-    
-    // Show notification
-    showNotification('New Alert', alert.Title);
-    
-    // Update UI
-    if (currentPage === 'alerts') {
-        renderAlertsPage();
-    }
-}
-
-function handleDashboardUpdate(dashboardData) {
-    console.log('Dashboard update received:', dashboardData);
-    updateDashboardWithData(dashboardData);
-}
-
-function handleServiceStatisticsUpdate(statistics) {
-    console.log('Service statistics update received:', statistics);
-    serviceData = statistics;
-    
-    if (currentPage === 'services') {
-        renderServicesPage();
-    }
-}
-
-// UI Initialization
-function initializeUI() {
-    // Navigation
-    initializeNavigation();
-    
-    // Page actions
-    initializePageActions();
-    
-    // Charts
-    initializeCharts();
-    
-    // Menu handlers
-    initializeMenuHandlers();
-    
-    console.log('UI initialized');
-}
-
-function initializeNavigation() {
-    const navItems = document.querySelectorAll('.nav-item');
-    
-    navItems.forEach(item => {
-        item.addEventListener('click', () => {
-            const page = item.dataset.page;
-            if (page) {
-                navigateToPage(page);
-            }
-        });
-    });
-}
-
-function initializePageActions() {
-    // Dashboard actions
-    const refreshBtn = document.getElementById('refresh-btn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => loadDashboardData());
-    }
-    
-    const exportBtn = document.getElementById('export-btn');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', () => exportData());
-    }
-    
-    // Connection filters
-    const connectionFilter = document.getElementById('connection-filter');
-    if (connectionFilter) {
-        connectionFilter.addEventListener('input', debounce(filterConnections, 300));
-    }
-    
-    const serviceFilter = document.getElementById('service-filter');
-    if (serviceFilter) {
-        serviceFilter.addEventListener('change', filterConnections);
-    }
-    
-    const stateFilter = document.getElementById('state-filter');
-    if (stateFilter) {
-        stateFilter.addEventListener('change', filterConnections);
-    }
-}
-
-function initializeCharts() {
-    const canvas = document.getElementById('activity-chart');
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
-        
-        dashboardChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Connections',
-                    data: [],
-                    borderColor: '#0078d4',
-                    backgroundColor: 'rgba(0, 120, 212, 0.1)',
-                    tension: 0.4
-                }, {
-                    label: 'Microsoft Services',
-                    data: [],
-                    borderColor: '#00bcf2',
-                    backgroundColor: 'rgba(0, 188, 242, 0.1)',
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'minute',
-                            displayFormats: {
-                                minute: 'HH:mm'
-                            }
-                        }
-                    },
-                    y: {
-                        beginAtZero: true
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    }
-                }
-            }
-        });
-    }
-}
-
-function initializeMenuHandlers() {
-    // Listen for menu events from main process
-    ipcRenderer.on('menu-navigate', (event, page) => {
-        navigateToPage(page);
-    });
-    
-    ipcRenderer.on('menu-refresh', () => {
-        loadDashboardData();
-    });
-    
-    ipcRenderer.on('menu-export-data', () => {
-        exportData();
-    });
-    
-    ipcRenderer.on('menu-start-monitoring', () => {
-        startMonitoring();
-    });
-    
-    ipcRenderer.on('menu-stop-monitoring', () => {
-        stopMonitoring();
-    });
-    
-    ipcRenderer.on('menu-clear-data', () => {
-        clearData();
-    });
-    
-    ipcRenderer.on('menu-open-settings', () => {
-        navigateToPage('settings');
-    });
-}
-
-// Navigation
-function navigateToPage(page) {
-    // Update active nav item
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-        if (item.dataset.page === page) {
-            item.classList.add('active');
+function updateDashboardStats(total, microsoft, services, avgLatency) {
+    const updateElement = (id, value, suffix = '') => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value + suffix;
         }
+    };
+    
+    updateElement('totalConnections', total);
+    updateElement('microsoftConnections', microsoft);
+    updateElement('activeServices', services);
+    updateElement('averageLatency', Math.round(avgLatency), 'ms');
+}
+
+function updateConnectionsTable(connections) {
+    const tbody = document.getElementById('connectionsTableBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    connections.slice(0, 10).forEach(conn => {
+        const row = document.createElement('tr');
+        
+        const latencyClass = getLatencyClass(conn.latency);
+        const latencyText = conn.latency ? `${Math.round(conn.latency)}ms` : 'N/A';
+        
+        row.innerHTML = `
+            <td><span class="service-badge">${conn.serviceName || 'Unknown'}</span></td>
+            <td class="process-name">${conn.processName || 'Unknown'}</td>
+            <td class="endpoint-address">${conn.remoteAddress}:${conn.remotePort}</td>
+            <td><span class="latency ${latencyClass}">${latencyText}</span></td>
+            <td><span class="status-badge status-${conn.state?.toLowerCase() || 'unknown'}">${conn.state || 'Unknown'}</span></td>
+            <td class="timestamp">${formatTimestamp(conn.timestamp)}</td>
+        `;
+        
+        tbody.appendChild(row);
     });
+}
+
+function updateServicesTable(services) {
+    const tbody = document.getElementById('servicesTableBody');
+    if (!tbody) return;
     
-    // Hide all pages
-    document.querySelectorAll('.page').forEach(p => {
-        p.classList.remove('active');
+    tbody.innerHTML = '';
+    
+    services.forEach(service => {
+        const row = document.createElement('tr');
+        
+        const latencyClass = getLatencyClass(service.avgLatency);
+        const latencyText = service.avgLatency ? `${Math.round(service.avgLatency)}ms` : 'N/A';
+        
+        row.innerHTML = `
+            <td><span class="service-badge">${service.name}</span></td>
+            <td class="connection-count">${service.connections || 0}</td>
+            <td class="process-list">${(service.processes || []).join(', ')}</td>
+            <td><span class="latency ${latencyClass}">${latencyText}</span></td>
+            <td><span class="status-badge status-active">Active</span></td>
+        `;
+        
+        tbody.appendChild(row);
     });
+}
+
+function getLatencyClass(latency) {
+    if (!latency) return 'unknown';
+    if (latency < 30) return 'good';
+    if (latency < 100) return 'fair';
+    return 'poor';
+}
+
+function calculateAverageLatency(services) {
+    if (!services || services.length === 0) return 0;
     
-    // Show target page
-    const targetPage = document.getElementById(`${page}-page`);
-    if (targetPage) {
-        targetPage.classList.add('active');
-        currentPage = page;
-        
-        // Load page-specific data
-        loadPageData(page);
-    }
-}
-
-async function loadPageData(page) {
-    try {
-        showLoading();
-        
-        switch (page) {
-            case 'dashboard':
-                await loadDashboardData();
-                break;
-            case 'connections':
-                await loadConnectionsData();
-                break;
-            case 'services':
-                await loadServicesData();
-                break;
-            case 'alerts':
-                await loadAlertsData();
-                break;
-            case 'processes':
-                await loadProcessesData();
-                break;
-        }
-    } catch (error) {
-        console.error(`Failed to load ${page} data:`, error);
-        showError(`Failed to load ${page} data`);
-    } finally {
-        hideLoading();
-    }
-}
-
-// Data Loading Functions
-async function loadDashboardData() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/network/dashboard`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            updateDashboardWithData(result.data);
-        }
-    } catch (error) {
-        console.error('Failed to load dashboard data:', error);
-    }
-}
-
-async function loadConnectionsData() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/network/connections`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            connectionData = result.data.items || [];
-            renderConnectionsPage();
-        }
-    } catch (error) {
-        console.error('Failed to load connections data:', error);
-    }
-}
-
-async function loadServicesData() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/network/services`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            serviceData = result.data;
-            renderServicesPage();
-        }
-    } catch (error) {
-        console.error('Failed to load services data:', error);
-    }
-}
-
-async function loadAlertsData() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/network/alerts`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            alertData = result.data.items || [];
-            renderAlertsPage();
-        }
-    } catch (error) {
-        console.error('Failed to load alerts data:', error);
-    }
-}
-
-async function loadProcessesData() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/network/processes`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            renderProcessesPage(result.data);
-        }
-    } catch (error) {
-        console.error('Failed to load processes data:', error);
-    }
-}
-
-// UI Update Functions
-function updateConnectionStatus(status, message) {
-    const statusIndicator = document.getElementById('status-indicator');
-    const statusText = document.getElementById('status-text');
+    const validLatencies = services
+        .map(s => s.avgLatency)
+        .filter(l => l && l > 0);
     
-    if (statusIndicator) {
-        statusIndicator.className = `status-indicator ${status}`;
-    }
+    if (validLatencies.length === 0) return 0;
     
-    if (statusText) {
-        statusText.textContent = message;
-    }
-    
-    isConnected = status === 'connected';
+    return validLatencies.reduce((sum, l) => sum + l, 0) / validLatencies.length;
 }
 
-function updateDashboardWithData(data) {
-    // Update metric cards
-    updateElement('metric-total-connections', data.activeConnections);
-    updateElement('metric-microsoft-connections', data.microsoftConnections);
-    updateElement('metric-bandwidth', formatBytes(data.currentBandwidthBytesPerSecond) + '/s');
-    updateElement('metric-alerts', data.recentAlerts?.length || 0);
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'N/A';
     
-    // Update header stats
-    updateElement('active-connections', data.activeConnections);
-    updateElement('microsoft-connections', data.microsoftConnections);
-    
-    // Update service list
-    if (data.topServices) {
-        updateServiceList(data.topServices);
-    }
-    
-    // Update recent connections
-    if (data.recentConnections) {
-        updateRecentConnections(data.recentConnections);
-    }
-    
-    // Update recent alerts
-    if (data.recentAlerts) {
-        updateRecentAlerts(data.recentAlerts);
-    }
-}
-
-function updateServiceList(services) {
-    const serviceList = document.getElementById('service-list');
-    if (!serviceList) return;
-    
-    serviceList.innerHTML = services.map(service => `
-        <div class="service-item">
-            <div class="service-info">
-                <span class="service-name">${service.serviceName}</span>
-                <span class="service-category">${service.serviceCategory || 'Unknown'}</span>
-            </div>
-            <div class="service-stats">
-                <span class="connection-count">${service.connectionCount} connections</span>
-                <span class="data-usage">${formatBytes(service.totalBytes)}</span>
-            </div>
-        </div>
-    `).join('');
-}
-
-function updateRecentConnections(connections) {
-    const tableBody = document.querySelector('#recent-connections-table tbody');
-    if (!tableBody) return;
-    
-    tableBody.innerHTML = connections.slice(0, 10).map(conn => `
-        <tr>
-            <td>${formatTime(conn.establishedTime)}</td>
-            <td>${conn.processName}</td>
-            <td>${conn.microsoftService || 'Unknown'}</td>
-            <td>${conn.remoteHost || conn.remoteIp}</td>
-            <td><span class="status-badge status-${conn.connectionState.toLowerCase()}">${conn.connectionState}</span></td>
-        </tr>
-    `).join('');
-}
-
-function updateRecentAlerts(alerts) {
-    const alertList = document.getElementById('alert-list');
-    if (!alertList) return;
-    
-    alertList.innerHTML = alerts.slice(0, 5).map(alert => `
-        <div class="alert-item alert-${alert.severity.toLowerCase()}">
-            <div class="alert-content">
-                <div class="alert-title">${alert.title}</div>
-                <div class="alert-message">${alert.message}</div>
-                <div class="alert-time">${formatTime(alert.createdAt)}</div>
-            </div>
-        </div>
-    `).join('');
-}
-
-// Utility Functions
-function updateElement(id, value) {
-    const element = document.getElementById(id);
-    if (element) {
-        element.textContent = value;
-    }
-}
-
-function formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatTime(dateString) {
-    const date = new Date(dateString);
+    const date = new Date(timestamp);
     return date.toLocaleTimeString();
 }
 
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-function showLoading() {
-    const overlay = document.getElementById('loading-overlay');
-    if (overlay) {
-        overlay.classList.add('visible');
+function updateLastRefreshTime() {
+    const element = document.getElementById('lastRefresh');
+    if (element) {
+        element.textContent = new Date().toLocaleTimeString();
     }
 }
 
-function hideLoading() {
-    const overlay = document.getElementById('loading-overlay');
-    if (overlay) {
-        overlay.classList.remove('visible');
-    }
-}
-
-function showNotification(title, message) {
-    console.log(`Notification: ${title} - ${message}`);
-    // Could implement toast notifications here
-}
-
-function showError(message) {
-    console.error('Error:', message);
-    // Could implement error display here
-}
-
-// Menu Action Handlers
-async function exportData() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/network/connections/export`);
-        const blob = await response.blob();
+function showAlert(alert) {
+    console.log('Alert:', alert);
+    
+    // Create a simple notification
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${alert.severity?.toLowerCase() || 'info'}`;
+    notification.innerHTML = `
+        <strong>${alert.title}</strong>
+        ${alert.description ? `<br>${alert.description}` : ''}
+    `;
+    
+    // Add to alerts container if it exists
+    const alertsContainer = document.getElementById('alertsContainer');
+    if (alertsContainer) {
+        alertsContainer.appendChild(notification);
         
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `connections_${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        showNotification('Export Complete', 'Connection data exported successfully');
-    } catch (error) {
-        console.error('Export failed:', error);
-        showError('Failed to export data');
+        // Remove after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 5000);
     }
 }
 
-function startMonitoring() {
-    // This would send a command to start monitoring
-    console.log('Start monitoring requested');
+function handleConnectionEvent(event) {
+    console.log('Connection event:', event);
+    // Could update the UI based on connection events
 }
 
-function stopMonitoring() {
-    // This would send a command to stop monitoring
-    console.log('Stop monitoring requested');
+// Chart functions (simple implementations)
+let latencyChart = null;
+let connectionsChart = null;
+
+function initializeCharts() {
+    // Initialize Chart.js charts if the library is available
+    if (typeof Chart === 'undefined') {
+        console.warn('Chart.js not loaded, charts will not be available');
+        return;
+    }
+    
+    initializeLatencyChart();
+    initializeConnectionsChart();
 }
 
-function clearData() {
-    // This would clear all monitoring data
-    console.log('Clear data requested');
-}
-
-// UI Refresh Timer
-function startUIRefreshTimer() {
-    setInterval(() => {
-        if (isConnected && currentPage === 'dashboard') {
-            // Update dashboard metrics periodically
-            updateDashboardMetrics();
+function initializeLatencyChart() {
+    const ctx = document.getElementById('latencyChart');
+    if (!ctx) return;
+    
+    latencyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Average Latency (ms)',
+                data: [],
+                borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Latency (ms)'
+                    }
+                }
+            },
+            animation: {
+                duration: 300
+            }
         }
-    }, UI_REFRESH_INTERVAL);
+    });
 }
 
-function updateDashboardMetrics() {
-    // Update current time-based metrics
-    if (dashboardChart && connectionData.length > 0) {
-        const now = new Date();
-        const activeCount = connectionData.filter(c => c.isActive).length;
-        const microsoftCount = connectionData.filter(c => c.isActive && c.microsoftService).length;
-        
-        // Add data point to chart
-        dashboardChart.data.labels.push(now);
-        dashboardChart.data.datasets[0].data.push(activeCount);
-        dashboardChart.data.datasets[1].data.push(microsoftCount);
-        
-        // Keep only last 20 data points
-        if (dashboardChart.data.labels.length > 20) {
-            dashboardChart.data.labels.shift();
-            dashboardChart.data.datasets[0].data.shift();
-            dashboardChart.data.datasets[1].data.shift();
+function initializeConnectionsChart() {
+    const ctx = document.getElementById('connectionsChart');
+    if (!ctx) return;
+    
+    connectionsChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Microsoft Connections', 'Other Connections'],
+            datasets: [{
+                data: [0, 0],
+                backgroundColor: ['#2196F3', '#E0E0E0'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
         }
-        
-        dashboardChart.update('none');
+    });
+}
+
+function updateLatencyChart(services) {
+    if (!latencyChart || !services) return;
+    
+    const now = new Date().toLocaleTimeString();
+    const avgLatency = calculateAverageLatency(services);
+    
+    // Add new data point
+    latencyChart.data.labels.push(now);
+    latencyChart.data.datasets[0].data.push(avgLatency);
+    
+    // Keep only last 20 data points
+    if (latencyChart.data.labels.length > 20) {
+        latencyChart.data.labels.shift();
+        latencyChart.data.datasets[0].data.shift();
     }
+    
+    latencyChart.update('none');
 }
 
-// Stub functions for incomplete features
-function renderConnectionsPage() {
-    console.log('Rendering connections page...');
+function updateConnectionsChart(data) {
+    if (!connectionsChart) return;
+    
+    const microsoft = data.microsoftConnections || 0;
+    const total = data.totalConnections || 0;
+    const other = Math.max(0, total - microsoft);
+    
+    connectionsChart.data.datasets[0].data = [microsoft, other];
+    connectionsChart.update('none');
 }
 
-function renderServicesPage() {
-    console.log('Rendering services page...');
-}
+// Export functions for debugging
+window.msMonitor = {
+    refreshData,
+    connectionStatus: () => connectionStatus,
+    dashboardData: () => dashboardData,
+    reconnect: connectToSignalR
+};
 
-function renderAlertsPage() {
-    console.log('Rendering alerts page...');
-}
-
-function renderProcessesPage(data) {
-    console.log('Rendering processes page...', data);
-}
-
-function filterConnections() {
-    console.log('Filtering connections...');
-}
-
-function updateConnectionInList(connection) {
-    console.log('Updating connection in list:', connection);
-}
-
-function addToRecentConnections(connection) {
-    console.log('Adding to recent connections:', connection);
-}
-
-function updateAlertsBadge() {
-    const badge = document.getElementById('alerts-badge');
-    if (badge) {
-        const unacknowledgedCount = alertData.filter(a => !a.isAcknowledged).length;
-        if (unacknowledgedCount > 0) {
-            badge.textContent = unacknowledgedCount;
-            badge.style.display = 'block';
-        } else {
-            badge.style.display = 'none';
-        }
-    }
-}
-
-console.log('Microsoft Endpoint Monitor renderer script loaded');
+console.log('Microsoft Endpoint Monitor renderer loaded successfully');

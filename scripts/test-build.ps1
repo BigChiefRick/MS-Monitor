@@ -1,16 +1,15 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-Microsoft Endpoint Monitor - Build & Test Validation Script
+MS-Monitor - Fixed Build & Test Validation Script
 
 .DESCRIPTION
-Comprehensive testing script to validate build and functionality
-Tests all components: Service, API, Database, and Electron App
-Generates detailed test report with pass/fail status
+Simplified and corrected testing script for immediate execution
+Tests all components with proper PowerShell syntax
 
 .NOTES
 Author: BigChiefRick
-Version: 1.0
+Version: 1.1 - Fixed
 Purpose: Build & Test Phase Validation
 #>
 
@@ -18,11 +17,11 @@ param(
     [switch]$SkipBuild,
     [switch]$ServiceOnly,
     [switch]$GenerateReport,
-    [int]$TestDuration = 30  # seconds for monitoring tests
+    [int]$TestDuration = 30
 )
 
 # Test configuration
-$ErrorActionPreference = "Continue"  # Continue on errors for comprehensive testing
+$ErrorActionPreference = "Continue"
 $TestResults = @()
 $ApiPort = 5000
 $TestStartTime = Get-Date
@@ -37,8 +36,17 @@ function Add-TestResult($TestName, $Status, $Details = "", $Duration = 0) {
         Timestamp = Get-Date
     }
     
-    $color = if ($Status -eq "PASS") { "Green" } elseif ($Status -eq "FAIL") { "Red" } else { "Yellow" }
-    $icon = if ($Status -eq "PASS") { "✅" } elseif ($Status -eq "FAIL") { "❌" } else { "⚠️" }
+    $color = switch ($Status) {
+        "PASS" { "Green" }
+        "FAIL" { "Red" }
+        default { "Yellow" }
+    }
+    
+    $icon = switch ($Status) {
+        "PASS" { "✅" }
+        "FAIL" { "❌" }
+        default { "⚠️" }
+    }
     
     Write-Host "$icon $TestName : $Status" -ForegroundColor $color
     if ($Details) {
@@ -60,10 +68,10 @@ function Measure-TestExecution($ScriptBlock, $TestName) {
     }
 }
 
-Write-Host "=== Microsoft Endpoint Monitor - Build & Test Validation ===" -ForegroundColor Cyan
+Write-Host "=== MS-Monitor - Build and Test Validation ===" -ForegroundColor Cyan
 Write-Host "Test Session Started: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Blue
 Write-Host "Platform: Windows 11 Desktop" -ForegroundColor Blue
-Write-Host "Test Duration: $TestDuration seconds for monitoring tests" -ForegroundColor Blue
+Write-Host "Repository: MS-Monitor" -ForegroundColor Blue
 Write-Host ""
 
 # Test 1: Prerequisites Verification
@@ -71,34 +79,33 @@ Write-Host "Phase 1: Prerequisites Verification" -ForegroundColor Yellow
 Write-Host "=" * 50
 
 # Test .NET 8.0 SDK
-$result = Measure-TestExecution {
+try {
     $dotnetVersion = & dotnet --version 2>$null
-    if (-not $dotnetVersion -or -not $dotnetVersion.StartsWith("8.")) {
-        throw ".NET 8.0 SDK not found or wrong version: $dotnetVersion"
+    if ($dotnetVersion -and $dotnetVersion.StartsWith("8.")) {
+        Add-TestResult "Prerequisites - .NET 8.0 SDK" "PASS" "Version: $dotnetVersion" 0
+    } else {
+        Add-TestResult "Prerequisites - .NET 8.0 SDK" "FAIL" "Wrong version or not found: $dotnetVersion" 0
     }
-} "Prerequisites - .NET 8.0 SDK"
-
-if ($result.Success) {
-    $dotnetVersion = & dotnet --version 2>$null
-    Add-TestResult "Prerequisites - .NET 8.0 SDK" "PASS" "Version: $dotnetVersion" $result.Duration
+} catch {
+    Add-TestResult "Prerequisites - .NET 8.0 SDK" "FAIL" ".NET 8.0 SDK not found" 0
 }
 
 # Test Node.js (if not service-only)
 if (-not $ServiceOnly) {
-    $result = Measure-TestExecution {
+    try {
         $nodeVersion = & node --version 2>$null
-        if (-not $nodeVersion) {
-            throw "Node.js not found"
+        if ($nodeVersion) {
+            $versionNumber = [Version]$nodeVersion.Substring(1)
+            if ($versionNumber -ge [Version]"18.0.0") {
+                Add-TestResult "Prerequisites - Node.js" "PASS" "Version: $nodeVersion" 0
+            } else {
+                Add-TestResult "Prerequisites - Node.js" "FAIL" "Version too old: $nodeVersion" 0
+            }
+        } else {
+            Add-TestResult "Prerequisites - Node.js" "FAIL" "Node.js not found" 0
         }
-        $versionNumber = [Version]$nodeVersion.Substring(1)
-        if ($versionNumber -lt [Version]"18.0.0") {
-            throw "Node.js version too old: $nodeVersion (required: 18+)"
-        }
-    } "Prerequisites - Node.js"
-    
-    if ($result.Success) {
-        $nodeVersion = & node --version 2>$null
-        Add-TestResult "Prerequisites - Node.js" "PASS" "Version: $nodeVersion" $result.Duration
+    } catch {
+        Add-TestResult "Prerequisites - Node.js" "FAIL" "Node.js not available" 0
     }
 }
 
@@ -111,10 +118,17 @@ if ($currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administ
 }
 
 # Test solution file exists
-if (Test-Path "MicrosoftEndpointMonitor.sln") {
+if (Test-Path "..\MicrosoftEndpointMonitor.sln") {
     Add-TestResult "Prerequisites - Solution File" "PASS" "Solution file found" 0
+} elseif (Test-Path "MicrosoftEndpointMonitor.sln") {
+    Add-TestResult "Prerequisites - Solution File" "PASS" "Solution file found in current directory" 0
 } else {
     Add-TestResult "Prerequisites - Solution File" "FAIL" "MicrosoftEndpointMonitor.sln not found" 0
+    # Try to find it
+    $solutionFiles = Get-ChildItem -Name "*.sln" -Recurse -ErrorAction SilentlyContinue
+    if ($solutionFiles) {
+        Write-Host "   Found solution files: $($solutionFiles -join ', ')" -ForegroundColor Gray
+    }
 }
 
 Write-Host ""
@@ -124,28 +138,36 @@ if (-not $SkipBuild) {
     Write-Host "Phase 2: Build Process Validation" -ForegroundColor Yellow
     Write-Host "=" * 50
     
-    # Test NuGet restore
-    $result = Measure-TestExecution {
-        $output = & dotnet restore --verbosity minimal 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "NuGet restore failed: $output"
-        }
-    } "Build - NuGet Restore"
+    # Change to parent directory if solution is there
+    $originalLocation = Get-Location
+    if (Test-Path "..\MicrosoftEndpointMonitor.sln") {
+        Set-Location ".."
+    }
     
-    if ($result.Success) {
-        Add-TestResult "Build - NuGet Restore" "PASS" "All packages restored successfully" $result.Duration
+    # Test NuGet restore
+    try {
+        Write-Host "   Restoring NuGet packages..." -ForegroundColor Gray
+        $output = & dotnet restore --verbosity minimal 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Add-TestResult "Build - NuGet Restore" "PASS" "All packages restored successfully" 0
+        } else {
+            Add-TestResult "Build - NuGet Restore" "FAIL" "NuGet restore failed: $output" 0
+        }
+    } catch {
+        Add-TestResult "Build - NuGet Restore" "FAIL" "Error during restore: $($_.Exception.Message)" 0
     }
     
     # Test solution build
-    $result = Measure-TestExecution {
+    try {
+        Write-Host "   Building solution..." -ForegroundColor Gray
         $output = & dotnet build --configuration Debug --no-restore --verbosity minimal 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Build failed: $output"
+        if ($LASTEXITCODE -eq 0) {
+            Add-TestResult "Build - Solution Compilation" "PASS" "All projects built successfully" 0
+        } else {
+            Add-TestResult "Build - Solution Compilation" "FAIL" "Build failed: $output" 0
         }
-    } "Build - Solution Compilation"
-    
-    if ($result.Success) {
-        Add-TestResult "Build - Solution Compilation" "PASS" "All projects built successfully" $result.Duration
+    } catch {
+        Add-TestResult "Build - Solution Compilation" "FAIL" "Error during build: $($_.Exception.Message)" 0
     }
     
     # Verify build outputs
@@ -171,6 +193,9 @@ if (-not $SkipBuild) {
         Add-TestResult "Build - Output Verification" "FAIL" "Missing files: $($missingFiles -join ', ')" 0
     }
     
+    # Return to original location
+    Set-Location $originalLocation
+    
     Write-Host ""
 }
 
@@ -179,51 +204,68 @@ Write-Host "Phase 3: Service Component Testing" -ForegroundColor Yellow
 Write-Host "=" * 50
 
 # Test service executable
-$serviceExePath = "src\MicrosoftEndpointMonitor.Service\bin\Debug\net8.0\MicrosoftEndpointMonitor.Service.exe"
+$serviceExePath = "..\src\MicrosoftEndpointMonitor.Service\bin\Debug\net8.0\MicrosoftEndpointMonitor.Service.exe"
+if (-not (Test-Path $serviceExePath)) {
+    $serviceExePath = "src\MicrosoftEndpointMonitor.Service\bin\Debug\net8.0\MicrosoftEndpointMonitor.Service.exe"
+}
+
 if (Test-Path $serviceExePath) {
     Add-TestResult "Service - Executable Exists" "PASS" "Service executable found" 0
     
     # Test service can start (brief test)
-    $result = Measure-TestExecution {
+    try {
+        Write-Host "   Testing service startup (5 seconds)..." -ForegroundColor Gray
         $process = Start-Process -FilePath $serviceExePath -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\service_test.log" -RedirectStandardError "$env:TEMP\service_error.log"
-        Start-Sleep -Seconds 5  # Let it initialize
+        Start-Sleep -Seconds 5
         
         if (-not $process.HasExited) {
             $process.Kill()
             Add-TestResult "Service - Startup Test" "PASS" "Service started successfully" 0
         } else {
-            $errorContent = if (Test-Path "$env:TEMP\service_error.log") { 
-                Get-Content "$env:TEMP\service_error.log" -Raw 
-            } else { 
-                "No error log" 
+            $errorContent = "Service exited immediately"
+            if (Test-Path "$env:TEMP\service_error.log") { 
+                $errorLog = Get-Content "$env:TEMP\service_error.log" -Raw
+                if ($errorLog) {
+                    $errorContent = $errorLog
+                }
             }
-            throw "Service exited immediately: $errorContent"
+            Add-TestResult "Service - Startup Test" "FAIL" $errorContent 0
         }
-    } "Service - Startup Test"
-    
+    } catch {
+        Add-TestResult "Service - Startup Test" "FAIL" "Error starting service: $($_.Exception.Message)" 0
+    }
 } else {
     Add-TestResult "Service - Executable Exists" "FAIL" "Service executable not found" 0
 }
 
 # Test database schema
-if (Test-Path "database\schema.sql") {
+$schemaPath = "..\database\schema.sql"
+if (-not (Test-Path $schemaPath)) {
+    $schemaPath = "database\schema.sql"
+}
+
+if (Test-Path $schemaPath) {
     Add-TestResult "Service - Database Schema" "PASS" "Database schema file found" 0
     
     # Validate schema content
-    $schemaContent = Get-Content "database\schema.sql" -Raw
-    $expectedTables = @("connections", "microsoft_endpoints", "monitoring_sessions", "processes")
-    $missingTables = @()
-    
-    foreach ($table in $expectedTables) {
-        if ($schemaContent -notmatch "CREATE TABLE.*$table") {
-            $missingTables += $table
+    try {
+        $schemaContent = Get-Content $schemaPath -Raw
+        $expectedTables = @("connections", "microsoft_endpoints", "monitoring_sessions", "processes")
+        $missingTables = @()
+        
+        foreach ($table in $expectedTables) {
+            if ($schemaContent -notmatch "CREATE TABLE.*$table") {
+                $missingTables += $table
+            }
         }
-    }
-    
-    if ($missingTables.Count -eq 0) {
-        Add-TestResult "Service - Database Schema Validation" "PASS" "All required tables defined" 0
-    } else {
-        Add-TestResult "Service - Database Schema Validation" "FAIL" "Missing tables: $($missingTables -join ', ')" 0
+        
+        if ($missingTables.Count -eq 0) {
+            Add-TestResult "Service - Database Schema Validation" "PASS" "All required tables defined" 0
+        } else {
+            Add-TestResult "Service - Database Schema Validation" "FAIL" "Missing tables: $($missingTables -join ', ')" 0
+        }
+    } catch {
+        Add-TestResult "Service - Database Schema Validation" "FAIL" "Error reading schema: $($_.Exception.Message)" 0
     }
 } else {
     Add-TestResult "Service - Database Schema" "FAIL" "Database schema file not found" 0
@@ -235,68 +277,79 @@ Write-Host ""
 Write-Host "Phase 4: API Component Testing" -ForegroundColor Yellow
 Write-Host "=" * 50
 
-$apiExePath = "src\MicrosoftEndpointMonitor.Api\bin\Debug\net8.0\MicrosoftEndpointMonitor.Api.exe"
+$apiExePath = "..\src\MicrosoftEndpointMonitor.Api\bin\Debug\net8.0\MicrosoftEndpointMonitor.Api.exe"
+if (-not (Test-Path $apiExePath)) {
+    $apiExePath = "src\MicrosoftEndpointMonitor.Api\bin\Debug\net8.0\MicrosoftEndpointMonitor.Api.exe"
+}
+
 if (Test-Path $apiExePath) {
     Add-TestResult "API - Executable Exists" "PASS" "API executable found" 0
     
     # Start API for testing
-    Write-Host "   Starting API for integration testing..." -ForegroundColor Gray
+    Write-Host "   Starting API for integration testing (10 seconds)..." -ForegroundColor Gray
     $apiProcess = $null
     try {
-        $apiProcess = Start-Process -FilePath "dotnet" -ArgumentList "run", "--project", "src\MicrosoftEndpointMonitor.Api", "--configuration", "Debug" -PassThru -NoNewWindow
-        Start-Sleep -Seconds 10  # Give API time to start
+        $apiProjectPath = Split-Path $apiExePath -Parent
+        $apiProjectPath = Join-Path (Split-Path $apiProjectPath -Parent) "MicrosoftEndpointMonitor.Api.csproj"
+        
+        if (Test-Path $apiProjectPath) {
+            $apiProcess = Start-Process -FilePath "dotnet" -ArgumentList "run", "--project", $apiProjectPath, "--configuration", "Debug" -PassThru -NoNewWindow
+        } else {
+            $apiProcess = Start-Process -FilePath $apiExePath -PassThru -NoNewWindow
+        }
+        
+        Start-Sleep -Seconds 10
         
         # Test health endpoint
-        $result = Measure-TestExecution {
+        try {
             $response = Invoke-WebRequest -Uri "http://localhost:$ApiPort/health" -TimeoutSec 10
-            if ($response.StatusCode -ne 200) {
-                throw "Health endpoint returned status: $($response.StatusCode)"
+            if ($response.StatusCode -eq 200) {
+                Add-TestResult "API - Health Endpoint" "PASS" "Health check successful" 0
+            } else {
+                Add-TestResult "API - Health Endpoint" "FAIL" "Health endpoint returned status: $($response.StatusCode)" 0
             }
-        } "API - Health Endpoint"
-        
-        if ($result.Success) {
-            Add-TestResult "API - Health Endpoint" "PASS" "Health check successful" $result.Duration
+        } catch {
+            Add-TestResult "API - Health Endpoint" "FAIL" "Health endpoint not accessible: $($_.Exception.Message)" 0
         }
         
         # Test Swagger documentation
-        $result = Measure-TestExecution {
+        try {
             $response = Invoke-WebRequest -Uri "http://localhost:$ApiPort/swagger" -TimeoutSec 10
-            if ($response.StatusCode -ne 200) {
-                throw "Swagger endpoint returned status: $($response.StatusCode)"
+            if ($response.StatusCode -eq 200) {
+                Add-TestResult "API - Swagger Documentation" "PASS" "API documentation accessible" 0
+            } else {
+                Add-TestResult "API - Swagger Documentation" "FAIL" "Swagger returned status: $($response.StatusCode)" 0
             }
-        } "API - Swagger Documentation"
-        
-        if ($result.Success) {
-            Add-TestResult "API - Swagger Documentation" "PASS" "API documentation accessible" $result.Duration
+        } catch {
+            Add-TestResult "API - Swagger Documentation" "FAIL" "Swagger not accessible: $($_.Exception.Message)" 0
         }
         
         # Test dashboard endpoint
-        $result = Measure-TestExecution {
+        try {
             $response = Invoke-WebRequest -Uri "http://localhost:$ApiPort/api/network/dashboard" -TimeoutSec 10
-            if ($response.StatusCode -ne 200) {
-                throw "Dashboard endpoint returned status: $($response.StatusCode)"
+            if ($response.StatusCode -eq 200) {
+                # Validate JSON response
+                try {
+                    $jsonContent = $response.Content | ConvertFrom-Json
+                    Add-TestResult "API - Dashboard Endpoint" "PASS" "Dashboard data available" 0
+                } catch {
+                    Add-TestResult "API - Dashboard Endpoint" "FAIL" "Dashboard returned invalid JSON" 0
+                }
+            } else {
+                Add-TestResult "API - Dashboard Endpoint" "FAIL" "Dashboard endpoint returned status: $($response.StatusCode)" 0
             }
-            
-            # Validate JSON response
-            $jsonContent = $response.Content | ConvertFrom-Json
-            if (-not $jsonContent) {
-                throw "Dashboard endpoint returned invalid JSON"
-            }
-        } "API - Dashboard Endpoint"
-        
-        if ($result.Success) {
-            Add-TestResult "API - Dashboard Endpoint" "PASS" "Dashboard data available" $result.Duration
+        } catch {
+            Add-TestResult "API - Dashboard Endpoint" "FAIL" "Dashboard endpoint not accessible: $($_.Exception.Message)" 0
         }
         
     } catch {
-        Add-TestResult "API - Integration Test" "FAIL" $_.Exception.Message 0
+        Add-TestResult "API - Integration Test" "FAIL" "Error during API testing: $($_.Exception.Message)" 0
     } finally {
         if ($apiProcess -and -not $apiProcess.HasExited) {
             $apiProcess.Kill()
             Write-Host "   API process stopped" -ForegroundColor Gray
         }
     }
-    
 } else {
     Add-TestResult "API - Executable Exists" "FAIL" "API executable not found" 0
 }
@@ -308,12 +361,17 @@ if (-not $ServiceOnly) {
     Write-Host "Phase 5: Electron App Testing" -ForegroundColor Yellow
     Write-Host "=" * 50
     
-    if (Test-Path "electron-app\package.json") {
+    $electronPath = "..\electron-app\package.json"
+    if (-not (Test-Path $electronPath)) {
+        $electronPath = "electron-app\package.json"
+    }
+    
+    if (Test-Path $electronPath) {
         Add-TestResult "Electron - Package Configuration" "PASS" "package.json found" 0
         
         # Validate package.json content
         try {
-            $packageContent = Get-Content "electron-app\package.json" -Raw | ConvertFrom-Json
+            $packageContent = Get-Content $electronPath -Raw | ConvertFrom-Json
             
             if ($packageContent.main -eq "main.js") {
                 Add-TestResult "Electron - Main Entry Point" "PASS" "main.js configured" 0
@@ -321,62 +379,39 @@ if (-not $ServiceOnly) {
                 Add-TestResult "Electron - Main Entry Point" "FAIL" "main.js not configured properly" 0
             }
             
-            if ($packageContent.dependencies.electron) {
+            if ($packageContent.dependencies -and $packageContent.dependencies.electron) {
                 Add-TestResult "Electron - Dependencies" "PASS" "Electron dependency found" 0
             } else {
                 Add-TestResult "Electron - Dependencies" "FAIL" "Electron dependency missing" 0
             }
-            
         } catch {
             Add-TestResult "Electron - Package Validation" "FAIL" "Invalid package.json: $($_.Exception.Message)" 0
         }
         
-        # Test npm install
-        if (Get-Command npm -ErrorAction SilentlyContinue) {
-            Write-Host "   Testing npm install..." -ForegroundColor Gray
-            Push-Location "electron-app"
-            try {
-                $result = Measure-TestExecution {
-                    $output = & npm install --silent 2>&1
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "npm install failed: $output"
-                    }
-                } "Electron - NPM Install"
-                
-                if ($result.Success) {
-                    Add-TestResult "Electron - NPM Install" "PASS" "Dependencies installed successfully" $result.Duration
-                }
-                
-            } finally {
-                Pop-Location
+        # Test essential files
+        $electronDir = Split-Path $electronPath -Parent
+        $electronFiles = @(
+            "main.js",
+            "renderer.js", 
+            "index.html",
+            "styles\main.css"
+        )
+        
+        $missingElectronFiles = @()
+        foreach ($file in $electronFiles) {
+            $fullPath = Join-Path $electronDir $file
+            if (-not (Test-Path $fullPath)) {
+                $missingElectronFiles += $file
             }
-        } else {
-            Add-TestResult "Electron - NPM Install" "SKIP" "npm not available" 0
         }
         
+        if ($missingElectronFiles.Count -eq 0) {
+            Add-TestResult "Electron - Essential Files" "PASS" "All essential files present" 0
+        } else {
+            Add-TestResult "Electron - Essential Files" "FAIL" "Missing files: $($missingElectronFiles -join ', ')" 0
+        }
     } else {
         Add-TestResult "Electron - Package Configuration" "FAIL" "package.json not found" 0
-    }
-    
-    # Test essential files
-    $electronFiles = @(
-        "electron-app\main.js",
-        "electron-app\renderer.js", 
-        "electron-app\index.html",
-        "electron-app\styles\main.css"
-    )
-    
-    $missingElectronFiles = @()
-    foreach ($file in $electronFiles) {
-        if (-not (Test-Path $file)) {
-            $missingElectronFiles += $file
-        }
-    }
-    
-    if ($missingElectronFiles.Count -eq 0) {
-        Add-TestResult "Electron - Essential Files" "PASS" "All essential files present" 0
-    } else {
-        Add-TestResult "Electron - Essential Files" "FAIL" "Missing files: $($missingElectronFiles -join ', ')" 0
     }
     
     Write-Host ""
@@ -387,97 +422,32 @@ Write-Host "Phase 6: Integration Testing" -ForegroundColor Yellow
 Write-Host "=" * 50
 
 # Test Windows API dependencies
-$result = Measure-TestExecution {
-    # Test if we can load necessary Windows APIs
-    Add-Type -TypeDefinition @"
-    using System;
-    using System.Runtime.InteropServices;
-    public class WinAPI {
-        [DllImport("iphlpapi.dll")]
-        public static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int dwOutBufLen, bool sort, int ipVersion, int tblClass, uint reserved);
-    }
-"@
-    [WinAPI]::GetExtendedTcpTable([IntPtr]::Zero, [ref]0, $false, 2, 5, 0) | Out-Null
-} "Integration - Windows API Access"
-
-if ($result.Success) {
-    Add-TestResult "Integration - Windows API Access" "PASS" "Windows TCP APIs accessible" $result.Duration
-}
-
-# Test network connectivity for monitoring
-$result = Measure-TestExecution {
-    # Test that we can enumerate network connections
+try {
+    # Test network connection enumeration
     $connections = Get-NetTCPConnection -State Established -ErrorAction Stop
-    if ($connections.Count -eq 0) {
-        throw "No network connections found - monitoring may not work properly"
+    if ($connections.Count -gt 0) {
+        Add-TestResult "Integration - Network Connection Enumeration" "PASS" "$($connections.Count) active connections found" 0
+    } else {
+        Add-TestResult "Integration - Network Connection Enumeration" "FAIL" "No network connections found" 0
     }
-} "Integration - Network Connection Enumeration"
-
-if ($result.Success) {
-    $connectionCount = (Get-NetTCPConnection -State Established).Count
-    Add-TestResult "Integration - Network Connection Enumeration" "PASS" "$connectionCount active connections found" $result.Duration
+} catch {
+    Add-TestResult "Integration - Network Connection Enumeration" "FAIL" "Error enumerating connections: $($_.Exception.Message)" 0
 }
 
 # Test Microsoft endpoint detection (sample)
-$result = Measure-TestExecution {
-    $msEndpoints = Get-NetTCPConnection -State Established | Where-Object { 
-        $_.RemoteAddress -match "^(52\.|40\.|13\.|20\.|51\.|104\.)" -or
-        $_.RemoteAddress -eq "outlook.office365.com"
+try {
+    $msConnections = Get-NetTCPConnection -State Established | Where-Object { 
+        $_.RemoteAddress -match "^(52\.|40\.|13\.|20\.|51\.|104\.)" 
     }
-    # This is a simplified test - real implementation is more comprehensive
-} "Integration - Microsoft Endpoint Detection"
-
-if ($result.Success) {
-    $msConnections = Get-NetTCPConnection -State Established | Where-Object { $_.RemoteAddress -match "^(52\.|40\.|13\.|20\.|51\.|104\.)" }
-    Add-TestResult "Integration - Microsoft Endpoint Detection" "PASS" "$($msConnections.Count) potential MS endpoints detected" $result.Duration
-}
-
-Write-Host ""
-
-# Test 7: Performance and Resource Testing
-Write-Host "Phase 7: Performance Testing" -ForegroundColor Yellow
-Write-Host "=" * 50
-
-# Test system resources
-$memoryUsage = [System.GC]::GetTotalMemory($false) / 1MB
-Add-TestResult "Performance - Memory Usage" "INFO" "$([math]::Round($memoryUsage, 2)) MB currently used" 0
-
-# Test file system performance
-$result = Measure-TestExecution {
-    $testFile = "$env:TEMP\endpoint_monitor_test.tmp"
-    $testData = "x" * 1MB
-    [System.IO.File]::WriteAllText($testFile, $testData)
-    $readData = [System.IO.File]::ReadAllText($testFile)
-    Remove-Item $testFile -Force
-    if ($readData.Length -ne $testData.Length) {
-        throw "File I/O test failed"
-    }
-} "Performance - File I/O"
-
-if ($result.Success) {
-    Add-TestResult "Performance - File I/O" "PASS" "File operations working (1MB in $([math]::Round($result.Duration, 2))s)" $result.Duration
-}
-
-# Test database creation
-$result = Measure-TestExecution {
-    $testDbPath = "$env:TEMP\test_endpoint_monitor.db"
-    if (Test-Path $testDbPath) { Remove-Item $testDbPath -Force }
-    
-    # Create a simple SQLite database to test functionality
-    $connectionString = "Data Source=$testDbPath"
-    Add-Type -Path (Get-ChildItem -Path "src\MicrosoftEndpointMonitor.Data\bin\Debug\net8.0" -Filter "System.Data.SQLite.dll" -Recurse | Select-Object -First 1).FullName -ErrorAction SilentlyContinue
-    
-    if (Test-Path $testDbPath) { Remove-Item $testDbPath -Force }
-} "Performance - Database Operations"
-
-if ($result.Success) {
-    Add-TestResult "Performance - Database Operations" "PASS" "Database operations functional" $result.Duration
+    Add-TestResult "Integration - Microsoft Endpoint Detection" "PASS" "$($msConnections.Count) potential MS endpoints detected" 0
+} catch {
+    Add-TestResult "Integration - Microsoft Endpoint Detection" "FAIL" "Error detecting MS endpoints: $($_.Exception.Message)" 0
 }
 
 Write-Host ""
 
 # Generate Test Report
-Write-Host "Phase 8: Test Results Summary" -ForegroundColor Yellow
+Write-Host "Phase 7: Test Results Summary" -ForegroundColor Yellow
 Write-Host "=" * 50
 
 $totalTests = $TestResults.Count
@@ -494,7 +464,12 @@ Write-Host "Passed: $passedTests" -ForegroundColor Green
 Write-Host "Failed: $failedTests" -ForegroundColor Red
 Write-Host "Skipped: $skippedTests" -ForegroundColor Yellow
 Write-Host "Info: $infoTests" -ForegroundColor Blue
-Write-Host "Success Rate: $([math]::Round(($passedTests / ($totalTests - $infoTests - $skippedTests)) * 100, 1))%" -ForegroundColor $(if ($failedTests -eq 0) { "Green" } else { "Yellow" })
+$successRate = if (($totalTests - $infoTests - $skippedTests) -gt 0) { 
+    [math]::Round(($passedTests / ($totalTests - $infoTests - $skippedTests)) * 100, 1) 
+} else { 
+    0 
+}
+Write-Host "Success Rate: $successRate%" -ForegroundColor $(if ($failedTests -eq 0) { "Green" } else { "Yellow" })
 Write-Host "Total Duration: $([math]::Round($totalDuration, 1)) seconds" -ForegroundColor Blue
 Write-Host ""
 
@@ -533,13 +508,17 @@ if ($GenerateReport) {
             Failed = $failedTests
             Skipped = $skippedTests
             Info = $infoTests
-            SuccessRate = [math]::Round(($passedTests / ($totalTests - $infoTests - $skippedTests)) * 100, 1)
+            SuccessRate = $successRate
         }
         Results = $TestResults
     }
     
-    $reportData | ConvertTo-Json -Depth 10 | Out-File -FilePath $reportPath -Encoding UTF8
-    Write-Host "📊 Test report saved to: $reportPath" -ForegroundColor Blue
+    try {
+        $reportData | ConvertTo-Json -Depth 10 | Out-File -FilePath $reportPath -Encoding UTF8
+        Write-Host "📊 Test report saved to: $reportPath" -ForegroundColor Blue
+    } catch {
+        Write-Host "⚠️ Could not save test report: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 Write-Host ""

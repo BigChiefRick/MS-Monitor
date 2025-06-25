@@ -115,8 +115,8 @@ The Electron app will automatically open showing:
 
 ```
 ┌─────────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│  Electron Frontend │◄──►│  ASP.NET Core    │◄──►│ .NET Service    │
-│  (Dashboard UI)    │    │  API + SignalR   │    │ (TCP Monitor)   │
+│  Electron Frontend  │◄──►│  ASP.NET Core    │◄──►│ .NET Service    │
+│  (Dashboard UI)     │    │  API + SignalR   │    │ (TCP Monitor)   │
 └─────────────────────┘    └──────────────────┘    └─────────────────┘
                                       │                       │
                                       ▼                       ▼

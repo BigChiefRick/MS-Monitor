@@ -1,4 +1,4 @@
-﻿// Microsoft Endpoint Monitor - Real-time Renderer
+﻿// Microsoft Endpoint Monitor - Enhanced Renderer with Service Control
 console.log('Microsoft Endpoint Monitor renderer starting...');
 
 // Configuration
@@ -15,6 +15,18 @@ let dashboardData = {
     recentConnections: []
 };
 
+// Service badge classification
+function getServiceBadgeClass(serviceName) {
+    const service = serviceName.toLowerCase();
+    if (service.includes('teams')) return 'teams';
+    if (service.includes('outlook')) return 'outlook';
+    if (service.includes('onedrive')) return 'onedrive';
+    if (service.includes('edge')) return 'edge';
+    if (service.includes('office') || service.includes('excel') || service.includes('word') || service.includes('powerpoint')) return 'office';
+    if (service.includes('sharepoint')) return 'sharepoint';
+    return 'default';
+}
+
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, initializing Microsoft Endpoint Monitor...');
@@ -22,10 +34,77 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeUI();
     connectToSignalR();
     startDataPolling();
-    
-    // Initialize charts
     initializeCharts();
+    
+    // Check if running in Electron
+    if (typeof require !== 'undefined') {
+        try {
+            const { ipcRenderer } = require('electron');
+            initializeElectronFeatures(ipcRenderer);
+        } catch (e) {
+            console.log('Not running in Electron environment');
+        }
+    }
 });
+
+function initializeElectronFeatures(ipcRenderer) {
+    // Add service control buttons to the header
+    const headerControls = document.querySelector('.header-controls');
+    if (headerControls) {
+        const serviceControls = document.createElement('div');
+        serviceControls.className = 'service-controls';
+        serviceControls.innerHTML = `
+            <button id="serviceStatusBtn" class="service-btn" title="Check Service Status">
+                📊 Status
+            </button>
+            <button id="restartServicesBtn" class="service-btn" title="Restart Services">
+                🔄 Restart
+            </button>
+        `;
+        headerControls.insertBefore(serviceControls, headerControls.firstChild);
+        
+        // Add CSS for service buttons
+        const style = document.createElement('style');
+        style.textContent = `
+            .service-controls {
+                display: flex;
+                gap: 0.5rem;
+                margin-right: 1rem;
+            }
+            .service-btn {
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+                color: var(--text-primary);
+                padding: 0.375rem 0.75rem;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.8rem;
+                font-weight: 500;
+                transition: all 0.2s ease;
+            }
+            .service-btn:hover {
+                background: var(--text-secondary);
+                color: var(--bg-secondary);
+                transform: translateY(-1px);
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Add event listeners
+        document.getElementById('serviceStatusBtn').addEventListener('click', async () => {
+            const status = await ipcRenderer.invoke('get-service-status');
+            updateConnectionStatus(`Service: ${status.service ? '✅' : '❌'} | API: ${status.api ? '✅' : '❌'}`);
+        });
+        
+        document.getElementById('restartServicesBtn').addEventListener('click', async () => {
+            updateConnectionStatus('Restarting services...');
+            await ipcRenderer.invoke('control-service', 'stop', 'api');
+            setTimeout(async () => {
+                await ipcRenderer.invoke('control-service', 'start', 'api');
+            }, 2000);
+        });
+    }
+}
 
 function initializeUI() {
     updateConnectionStatus('Connecting...');
@@ -51,9 +130,9 @@ function updateConnectionStatus(status) {
         // Update status indicator color
         if (statusIndicator) {
             statusIndicator.className = 'status-indicator';
-            if (status === 'Connected') {
+            if (status.includes('Connected') || status.includes('✅')) {
                 statusIndicator.classList.add('connected');
-            } else if (status === 'Connecting...') {
+            } else if (status.includes('Connecting') || status.includes('Restarting')) {
                 statusIndicator.classList.add('connecting');
             } else {
                 statusIndicator.classList.add('disconnected');
@@ -66,7 +145,6 @@ function updateConnectionStatus(status) {
 
 async function connectToSignalR() {
     try {
-        // Use the SignalR client library (should be included in your HTML)
         if (typeof signalR === 'undefined') {
             console.warn('SignalR library not loaded, falling back to polling only');
             updateConnectionStatus('Connected (Polling Mode)');
@@ -208,9 +286,10 @@ function updateConnectionsTable(connections) {
         
         const latencyClass = getLatencyClass(conn.latency);
         const latencyText = conn.latency ? `${Math.round(conn.latency)}ms` : 'N/A';
+        const serviceBadgeClass = getServiceBadgeClass(conn.serviceName || 'Unknown');
         
         row.innerHTML = `
-            <td><span class="service-badge">${conn.serviceName || 'Unknown'}</span></td>
+            <td><span class="service-badge ${serviceBadgeClass}">${conn.serviceName || 'Unknown'}</span></td>
             <td class="process-name">${conn.processName || 'Unknown'}</td>
             <td class="endpoint-address">${conn.remoteAddress}:${conn.remotePort}</td>
             <td><span class="latency ${latencyClass}">${latencyText}</span></td>
@@ -233,9 +312,10 @@ function updateServicesTable(services) {
         
         const latencyClass = getLatencyClass(service.avgLatency);
         const latencyText = service.avgLatency ? `${Math.round(service.avgLatency)}ms` : 'N/A';
+        const serviceBadgeClass = getServiceBadgeClass(service.name);
         
         row.innerHTML = `
-            <td><span class="service-badge">${service.name}</span></td>
+            <td><span class="service-badge ${serviceBadgeClass}">${service.name}</span></td>
             <td class="connection-count">${service.connections || 0}</td>
             <td class="process-list">${(service.processes || []).join(', ')}</td>
             <td><span class="latency ${latencyClass}">${latencyText}</span></td>
@@ -309,12 +389,11 @@ function handleConnectionEvent(event) {
     // Could update the UI based on connection events
 }
 
-// Chart functions (simple implementations)
+// Chart functions
 let latencyChart = null;
 let connectionsChart = null;
 
 function initializeCharts() {
-    // Initialize Chart.js charts if the library is available
     if (typeof Chart === 'undefined') {
         console.warn('Chart.js not loaded, charts will not be available');
         return;
@@ -335,19 +414,43 @@ function initializeLatencyChart() {
             datasets: [{
                 label: 'Average Latency (ms)',
                 data: [],
-                borderColor: '#4CAF50',
-                backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                tension: 0.1
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.1,
+                fill: true
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             scales: {
                 y: {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: 'Latency (ms)'
+                        text: 'Latency (ms)',
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary')
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color')
+                    },
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary')
+                    }
+                },
+                x: {
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color')
+                    },
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary')
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary')
                     }
                 }
             },
@@ -368,15 +471,20 @@ function initializeConnectionsChart() {
             labels: ['Microsoft Connections', 'Other Connections'],
             datasets: [{
                 data: [0, 0],
-                backgroundColor: ['#2196F3', '#E0E0E0'],
+                backgroundColor: ['#3b82f6', '#e5e7eb'],
                 borderWidth: 0
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary'),
+                        padding: 20
+                    }
                 }
             }
         }
@@ -413,12 +521,65 @@ function updateConnectionsChart(data) {
     connectionsChart.update('none');
 }
 
+// Theme management
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    
+    const themeIcon = document.getElementById('themeIcon');
+    const themeText = document.getElementById('themeText');
+    
+    if (newTheme === 'dark') {
+        themeIcon.textContent = '☀️';
+        themeText.textContent = 'Light Mode';
+    } else {
+        themeIcon.textContent = '🌙';
+        themeText.textContent = 'Dark Mode';
+    }
+    
+    // Save preference
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('theme', newTheme);
+    }
+    
+    // Update charts if they exist
+    if (latencyChart) {
+        latencyChart.update();
+    }
+    if (connectionsChart) {
+        connectionsChart.update();
+    }
+}
+
+// Load saved theme
+document.addEventListener('DOMContentLoaded', function() {
+    let savedTheme = 'light';
+    
+    if (typeof localStorage !== 'undefined') {
+        savedTheme = localStorage.getItem('theme') || 'light';
+    }
+    
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    
+    if (savedTheme === 'dark') {
+        const themeIcon = document.getElementById('themeIcon');
+        const themeText = document.getElementById('themeText');
+        if (themeIcon) themeIcon.textContent = '☀️';
+        if (themeText) themeText.textContent = 'Light Mode';
+    }
+});
+
 // Export functions for debugging
-window.msMonitor = {
-    refreshData,
-    connectionStatus: () => connectionStatus,
-    dashboardData: () => dashboardData,
-    reconnect: connectToSignalR
-};
+if (typeof window !== 'undefined') {
+    window.msMonitor = {
+        refreshData,
+        connectionStatus: () => connectionStatus,
+        dashboardData: () => dashboardData,
+        reconnect: connectToSignalR,
+        toggleTheme
+    };
+}
 
 console.log('Microsoft Endpoint Monitor renderer loaded successfully');

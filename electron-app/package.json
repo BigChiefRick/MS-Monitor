@@ -1,43 +1,38 @@
-{
+﻿{
   "name": "microsoft-endpoint-monitor",
   "version": "1.0.0",
-  "description": "Real-time network monitoring for Microsoft endpoints",
+  "description": "Real-time monitoring for Microsoft services with latency tracking",
   "main": "main.js",
   "author": "BigChiefRick",
   "license": "MIT",
-  "private": true,
+  "homepage": "https://github.com/BigChiefRick/MS-Monitor",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
     "build-win": "electron-builder --win",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --publish=never",
-    "postinstall": "electron-builder install-app-deps"
-  },
-  "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1"
-  },
-  "dependencies": {
-    "@microsoft/signalr": "^8.0.0",
-    "chart.js": "^4.4.0",
-    "chartjs-adapter-date-fns": "^3.0.0",
-    "date-fns": "^3.0.0"
+    "dist": "electron-builder --publish=never"
   },
   "build": {
-    "appId": "com.bigchiefrick.microsoft-endpoint-monitor",
+    "appId": "com.bigchief.ms-monitor",
     "productName": "Microsoft Endpoint Monitor",
     "directories": {
-      "output": "dist"
+      "buildResources": "assets"
     },
     "files": [
-      "main.js",
-      "renderer.js",
-      "index.html",
-      "assets/**/*",
-      "styles/**/*",
-      "node_modules/**/*"
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
     ],
     "win": {
       "target": [
@@ -46,32 +41,20 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    },
-    "extraResources": [
-      {
-        "from": "../database/",
-        "to": "database/",
-        "filter": ["schema.sql"]
-      }
-    ]
+      "createStartMenuShortcut": true,
+      "shortcutName": "Microsoft Endpoint Monitor"
+    }
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/BigChiefRick/microsoft-endpoint-monitor.git"
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
   },
-  "keywords": [
-    "network",
-    "monitoring",
-    "microsoft",
-    "endpoint",
-    "real-time",
-    "glasswire"
-  ]
+  "dependencies": {}
 }

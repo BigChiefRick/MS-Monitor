@@ -1,0 +1,77 @@
+{
+  "name": "microsoft-endpoint-monitor",
+  "version": "1.0.0",
+  "description": "Real-time network monitoring for Microsoft endpoints",
+  "main": "main.js",
+  "author": "BigChiefRick",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build-win": "electron-builder --win",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --publish=never",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^8.0.0",
+    "chart.js": "^4.4.0",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "date-fns": "^3.0.0"
+  },
+  "build": {
+    "appId": "com.bigchiefrick.microsoft-endpoint-monitor",
+    "productName": "Microsoft Endpoint Monitor",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "renderer.js",
+      "index.html",
+      "assets/**/*",
+      "styles/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "extraResources": [
+      {
+        "from": "../database/",
+        "to": "database/",
+        "filter": ["schema.sql"]
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BigChiefRick/microsoft-endpoint-monitor.git"
+  },
+  "keywords": [
+    "network",
+    "monitoring",
+    "microsoft",
+    "endpoint",
+    "real-time",
+    "glasswire"
+  ]
+}

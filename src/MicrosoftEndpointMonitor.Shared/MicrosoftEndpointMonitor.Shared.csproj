@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyTitle>Microsoft Endpoint Monitor Shared Models</AssemblyTitle>
+    <AssemblyDescription>Shared data models and DTOs for Microsoft Endpoint Monitor</AssemblyDescription>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Company>BigChiefRick</Company>
+    <Product>Microsoft Endpoint Monitor</Product>
+    <Copyright>Copyright © 2025 BigChiefRick</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+  </ItemGroup>
+
+</Project>

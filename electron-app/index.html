@@ -4,461 +4,50 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Microsoft Endpoint Monitor</title>
-    
-    <!-- External Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    
-    <style>
-        :root {
-            /* Light mode colors */
-            --bg-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --bg-secondary: rgba(255, 255, 255, 0.95);
-            --text-primary: #333;
-            --text-secondary: #6c757d;
-            --text-accent: #2c3e50;
-            --border-color: rgba(255,255,255,0.2);
-            --shadow: rgba(0,0,0,0.1);
-            --card-bg: rgba(255, 255, 255, 0.95);
-            --table-bg: #f8f9fa;
-            --table-border: #e9ecef;
-        }
-
-        [data-theme="dark"] {
-            /* Dark mode colors */
-            --bg-primary: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            --bg-secondary: rgba(45, 52, 64, 0.95);
-            --text-primary: #ecf0f1;
-            --text-secondary: #bdc3c7;
-            --text-accent: #ecf0f1;
-            --border-color: rgba(255,255,255,0.1);
-            --shadow: rgba(0,0,0,0.3);
-            --card-bg: rgba(52, 73, 94, 0.95);
-            --table-bg: #34495e;
-            --table-border: #2c3e50;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            transition: all 0.3s ease;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            overflow-x: hidden;
-        }
-
-        .header {
-            background: var(--bg-secondary);
-            backdrop-filter: blur(10px);
-            padding: 1rem 2rem;
-            box-shadow: 0 2px 20px var(--shadow);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .logo h1 {
-            color: var(--text-accent);
-            font-size: 1.5rem;
-            font-weight: 600;
-        }
-
-        .header-controls {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .theme-toggle {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            transition: all 0.3s ease;
-        }
-
-        .theme-toggle:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px var(--shadow);
-        }
-
-        .connection-status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            background: var(--card-bg);
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            border: 1px solid var(--border-color);
-        }
-
-        .status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #dc3545;
-            animation: pulse 2s infinite;
-        }
-
-        .status-indicator.connected { background: #28a745; }
-        .status-indicator.connecting { background: #ffc107; }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 1.5rem;
-            box-shadow: 0 8px 32px var(--shadow);
-            border: 1px solid var(--border-color);
-            transition: transform 0.3s ease;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .stat-value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: var(--text-accent);
-            margin-bottom: 0.5rem;
-        }
-
-        .stat-label {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-
-        .content-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            margin-bottom: 2rem;
-        }
-
-        .panel {
-            background: var(--card-bg);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 1.5rem;
-            box-shadow: 0 8px 32px var(--shadow);
-            border: 1px solid var(--border-color);
-        }
-
-        .panel-title {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: var(--text-accent);
-            margin-bottom: 1rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .refresh-btn {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            transition: background 0.3s;
-        }
-
-        .refresh-btn:hover {
-            background: #0056b3;
-            transform: translateY(-1px);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-
-        th, td {
-            text-align: left;
-            padding: 0.75rem;
-            border-bottom: 1px solid var(--table-border);
-        }
-
-        th {
-            font-weight: 600;
-            color: var(--text-secondary);
-            background: var(--table-bg);
-        }
-
-        .service-badge {
-            background: #007bff;
-            color: white;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-
-        .status-badge {
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-
-        .status-established { background: #d4edda; color: #155724; }
-        .status-timewait { background: #fff3cd; color: #856404; }
-        .status-active { background: #d4edda; color: #155724; }
-
-        .latency {
-            font-weight: 600;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-        }
-
-        .latency.good { background: #d4edda; color: #155724; }
-        .latency.fair { background: #fff3cd; color: #856404; }
-        .latency.poor { background: #f8d7da; color: #721c24; }
-
-        .charts-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 2rem;
-        }
-
-        .chart-container {
-            background: var(--card-bg);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 1.5rem;
-            box-shadow: 0 8px 32px var(--shadow);
-            border: 1px solid var(--border-color);
-        }
-
-        .chart-canvas {
-            max-height: 300px;
-        }
-
-        .footer {
-            text-align: center;
-            padding: 1rem;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-
-        .alert {
-            padding: 0.75rem 1rem;
-            border-radius: 8px;
-            margin-bottom: 0.5rem;
-            border-left: 4px solid;
-        }
-
-        .alert-info {
-            background: #d1ecf1;
-            border-color: #bee5eb;
-            color: #0c5460;
-        }
-
-        .alert-warning {
-            background: #fff3cd;
-            border-color: #ffeaa7;
-            color: #856404;
-        }
-
-        .alert-error {
-            background: #f8d7da;
-            border-color: #f5c6cb;
-            color: #721c24;
-        }
-
-        /* Dark mode specific adjustments */
-        [data-theme="dark"] .alert-info {
-            background: #1e3a42;
-            color: #7dd3fc;
-        }
-
-        [data-theme="dark"] .alert-warning {
-            background: #3a2f1a;
-            color: #fbbf24;
-        }
-
-        [data-theme="dark"] .alert-error {
-            background: #3a1f1f;
-            color: #f87171;
-        }
-
-        [data-theme="dark"] .service-badge {
-            background: #3b82f6;
-        }
-
-        [data-theme="dark"] .status-established {
-            background: #1f4d2e;
-            color: #86efac;
-        }
-
-        [data-theme="dark"] .status-timewait {
-            background: #3d2f1a;
-            color: #fbbf24;
-        }
-
-        [data-theme="dark"] .status-active {
-            background: #1f4d2e;
-            color: #86efac;
-        }
-
-        [data-theme="dark"] .latency.good {
-            background: #1f4d2e;
-            color: #86efac;
-        }
-
-        [data-theme="dark"] .latency.fair {
-            background: #3d2f1a;
-            color: #fbbf24;
-        }
-
-        [data-theme="dark"] .latency.poor {
-            background: #3a1f1f;
-            color: #f87171;
-        }
-
-        @media (max-width: 768px) {
-            .content-grid,
-            .charts-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .header {
-                flex-direction: column;
-                gap: 1rem;
-            }
-
-            .header-controls {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-        }
-
-        /* Loading animation */
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid var(--text-secondary);
-            border-radius: 50%;
-            border-top-color: var(--text-accent);
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
+    <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
     <header class="header">
         <div class="logo">
-            <h1>🔍 Microsoft Endpoint Monitor</h1>
+            <h1>🌐 Microsoft Endpoint Monitor</h1>
         </div>
         <div class="header-controls">
+            <div class="connection-status">
+                <div id="statusIndicator" class="status-indicator"></div>
+                <span id="connectionStatus">Connecting...</span>
+            </div>
             <button class="theme-toggle" onclick="toggleTheme()">
                 <span id="themeIcon">🌙</span>
                 <span id="themeText">Dark Mode</span>
             </button>
-            <div class="connection-status">
-                <div id="statusIndicator" class="status-indicator"></div>
-                <span id="connectionStatus">Connecting...</span>
-                <span style="margin-left: 10px; font-size: 0.8rem;">
-                    Last: <span id="lastRefresh">Never</span>
-                </span>
-            </div>
         </div>
     </header>
 
     <div class="container">
-        <!-- Dashboard Stats -->
         <div class="dashboard-grid">
             <div class="stat-card">
-                <div id="totalConnections" class="stat-value">
-                    <div class="loading"></div>
-                </div>
+                <div id="totalConnections" class="stat-value">0</div>
                 <div class="stat-label">Total Connections</div>
             </div>
             <div class="stat-card">
-                <div id="microsoftConnections" class="stat-value">
-                    <div class="loading"></div>
-                </div>
-                <div class="stat-label">Microsoft Endpoints</div>
+                <div id="microsoftConnections" class="stat-value">0</div>
+                <div class="stat-label">Microsoft Connections</div>
             </div>
             <div class="stat-card">
-                <div id="activeServices" class="stat-value">
-                    <div class="loading"></div>
-                </div>
+                <div id="activeServices" class="stat-value">0</div>
                 <div class="stat-label">Active Services</div>
             </div>
             <div class="stat-card">
-                <div id="averageLatency" class="stat-value">
-                    <div class="loading"></div>
-                </div>
-                <div class="stat-label">Average Latency</div>
+                <div id="averageLatency" class="stat-value">0</div>
+                <div class="stat-label">Avg Latency (ms)</div>
             </div>
         </div>
 
-        <!-- Charts -->
-        <div class="charts-grid">
-            <div class="chart-container">
-                <h3 class="panel-title">Latency Trend</h3>
-                <canvas id="latencyChart" class="chart-canvas"></canvas>
-            </div>
-            <div class="chart-container">
-                <h3 class="panel-title">Connection Distribution</h3>
-                <canvas id="connectionsChart" class="chart-canvas"></canvas>
-            </div>
-        </div>
-
-        <!-- Data Tables -->
         <div class="content-grid">
             <div class="panel">
                 <div class="panel-title">
                     Recent Microsoft Connections
-                    <button id="refreshBtn" class="refresh-btn">
-                        <span id="refreshIcon">🔄</span> Refresh
-                    </button>
+                    <button id="refreshBtn" class="refresh-btn">🔄 Refresh</button>
                 </div>
                 <table>
                     <thead>
@@ -473,89 +62,73 @@
                     </thead>
                     <tbody id="connectionsTableBody">
                         <tr>
-                            <td colspan="6" style="text-align: center; color: var(--text-secondary);">
-                                <div class="loading" style="margin: 1rem auto;"></div>
-                                Loading data...
-                            </td>
+                            <td><span class="service-badge teams">Microsoft Teams</span></td>
+                            <td class="process-name">Teams.exe</td>
+                            <td class="endpoint-address">teams.microsoft.com:443</td>
+                            <td><span class="latency good">45ms</span></td>
+                            <td><span class="status-badge status-established">Established</span></td>
+                            <td class="timestamp">12:34:56</td>
+                        </tr>
+                        <tr>
+                            <td><span class="service-badge outlook">Outlook</span></td>
+                            <td class="process-name">outlook.exe</td>
+                            <td class="endpoint-address">outlook.office365.com:443</td>
+                            <td><span class="latency good">32ms</span></td>
+                            <td><span class="status-badge status-established">Established</span></td>
+                            <td class="timestamp">12:34:45</td>
+                        </tr>
+                        <tr>
+                            <td><span class="service-badge onedrive">OneDrive</span></td>
+                            <td class="process-name">OneDrive.exe</td>
+                            <td class="endpoint-address">onedrive.live.com:443</td>
+                            <td><span class="latency fair">67ms</span></td>
+                            <td><span class="status-badge status-established">Established</span></td>
+                            <td class="timestamp">12:34:30</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
             <div class="panel">
-                <div class="panel-title">Active Microsoft Services</div>
+                <div class="panel-title">Active Services</div>
                 <table>
                     <thead>
                         <tr>
                             <th>Service</th>
                             <th>Connections</th>
-                            <th>Processes</th>
                             <th>Avg Latency</th>
                             <th>Status</th>
                         </tr>
                     </thead>
                     <tbody id="servicesTableBody">
                         <tr>
-                            <td colspan="5" style="text-align: center; color: var(--text-secondary);">
-                                <div class="loading" style="margin: 1rem auto;"></div>
-                                Loading services...
-                            </td>
+                            <td><span class="service-badge teams">Microsoft Teams</span></td>
+                            <td class="connection-count">3</td>
+                            <td><span class="latency good">45ms</span></td>
+                            <td><span class="status-badge status-active">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="service-badge outlook">Outlook</span></td>
+                            <td class="connection-count">2</td>
+                            <td><span class="latency good">32ms</span></td>
+                            <td><span class="status-badge status-active">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="service-badge onedrive">OneDrive</span></td>
+                            <td class="connection-count">1</td>
+                            <td><span class="latency fair">67ms</span></td>
+                            <td><span class="status-badge status-active">Active</span></td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
-
-        <!-- Alerts Container -->
-        <div id="alertsContainer"></div>
     </div>
 
     <footer class="footer">
-        Microsoft Endpoint Monitor - Real-time network monitoring for Microsoft services
+        <p>Microsoft Endpoint Monitor v1.0.0 - Real-time endpoint monitoring by BigChiefRick</p>
     </footer>
 
-    <script>
-        // Theme management
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            
-            document.documentElement.setAttribute('data-theme', newTheme);
-            
-            const themeIcon = document.getElementById('themeIcon');
-            const themeText = document.getElementById('themeText');
-            
-            if (newTheme === 'dark') {
-                themeIcon.textContent = '☀️';
-                themeText.textContent = 'Light Mode';
-            } else {
-                themeIcon.textContent = '🌙';
-                themeText.textContent = 'Dark Mode';
-            }
-            
-            // Save preference
-            localStorage.setItem('theme', newTheme);
-            
-            // Update charts if they exist
-            if (window.latencyChart) {
-                window.latencyChart.update();
-            }
-            if (window.connectionsChart) {
-                window.connectionsChart.update();
-            }
-        }
-
-        // Load saved theme
-        document.addEventListener('DOMContentLoaded', function() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            document.documentElement.setAttribute('data-theme', savedTheme);
-            
-            if (savedTheme === 'dark') {
-                document.getElementById('themeIcon').textContent = '☀️';
-                document.getElementById('themeText').textContent = 'Light Mode';
-            }
-        });
-    </script>
     <script src="renderer.js"></script>
 </body>
 </html>

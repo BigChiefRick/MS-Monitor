@@ -1,33 +1,27 @@
 ﻿:root {
-    /* Light mode colors - improved readability */
     --bg-primary: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
     --bg-secondary: rgba(255, 255, 255, 0.95);
     --text-primary: #1e293b;
     --text-secondary: #64748b;
     --text-accent: #0f172a;
-    --border-color: rgba(203, 213, 225, 0.3);
+    --border-color: rgba(203, 213, 225, 0.4);
     --shadow: rgba(0, 0, 0, 0.08);
-    --card-bg: rgba(255, 255, 255, 0.95);
+    --card-bg: rgba(255, 255, 255, 0.98);
     --table-bg: #f8fafc;
     --table-border: #e2e8f0;
-    --service-badge-bg: #3b82f6;
-    --service-badge-text: #ffffff;
 }
 
 [data-theme="dark"] {
-    /* Dark mode colors - improved contrast */
     --bg-primary: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
     --bg-secondary: rgba(30, 41, 59, 0.95);
     --text-primary: #f1f5f9;
     --text-secondary: #cbd5e1;
     --text-accent: #f8fafc;
-    --border-color: rgba(148, 163, 184, 0.2);
+    --border-color: rgba(148, 163, 184, 0.3);
     --shadow: rgba(0, 0, 0, 0.4);
     --card-bg: rgba(51, 65, 85, 0.95);
     --table-bg: #334155;
     --table-border: #475569;
-    --service-badge-bg: #1e40af;
-    --service-badge-text: #e0e7ff;
 }
 
 * {
@@ -38,62 +32,34 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
-    overflow-x: hidden;
     line-height: 1.6;
+    font-size: 14px;
 }
 
 .header {
     background: var(--bg-secondary);
     backdrop-filter: blur(20px);
     padding: 1rem 2rem;
-    box-shadow: 0 1px 3px var(--shadow);
+    box-shadow: 0 2px 8px var(--shadow);
     border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
 
-.logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
 .logo h1 {
     color: var(--text-accent);
     font-size: 1.5rem;
     font-weight: 600;
-    letter-spacing: -0.025em;
 }
 
 .header-controls {
     display: flex;
     align-items: center;
     gap: 1rem;
-}
-
-.theme-toggle {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.2s ease;
-}
-
-.theme-toggle:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px var(--shadow);
-    border-color: var(--text-secondary);
 }
 
 .connection-status {
@@ -119,13 +85,18 @@ body {
     background: #10b981; 
     animation: none;
 }
-.status-indicator.connecting { 
-    background: #f59e0b; 
-}
 
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+.theme-toggle {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .container {
@@ -143,25 +114,17 @@ body {
 
 .stat-card {
     background: var(--card-bg);
-    backdrop-filter: blur(20px);
     border-radius: 12px;
     padding: 1.5rem;
-    box-shadow: 0 1px 3px var(--shadow);
+    box-shadow: 0 2px 8px var(--shadow);
     border: 1px solid var(--border-color);
-    transition: all 0.2s ease;
-}
-
-.stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px var(--shadow);
 }
 
 .stat-value {
-    font-size: 2.25rem;
+    font-size: 2.5rem;
     font-weight: 700;
     color: var(--text-accent);
     margin-bottom: 0.5rem;
-    line-height: 1;
 }
 
 .stat-label {
@@ -169,22 +132,19 @@ body {
     font-size: 0.875rem;
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
 }
 
 .content-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 2rem;
-    margin-bottom: 2rem;
 }
 
 .panel {
     background: var(--card-bg);
-    backdrop-filter: blur(20px);
     border-radius: 12px;
     padding: 1.5rem;
-    box-shadow: 0 1px 3px var(--shadow);
+    box-shadow: 0 2px 8px var(--shadow);
     border: 1px solid var(--border-color);
 }
 
@@ -206,22 +166,11 @@ body {
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.8rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.refresh-btn:hover {
-    background: #2563eb;
-    transform: translateY(-1px);
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 1rem;
     font-size: 0.875rem;
 }
 
@@ -237,68 +186,32 @@ th {
     background: var(--table-bg);
     font-size: 0.8rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
 }
 
-/* IMPROVED: Service badges with better readability */
 .service-badge {
-    background: var(--service-badge-bg);
-    color: var(--service-badge-text);
     padding: 0.375rem 0.75rem;
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 600;
     white-space: nowrap;
     display: inline-block;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    border: 1px solid;
 }
 
-/* Service-specific badge colors for better distinction */
 .service-badge.teams { 
-    background: #6264a7; 
-    color: #ffffff; 
+    background: #f3f4f6; 
+    color: #6b21a8; 
+    border-color: #d8b4fe;
 }
 .service-badge.outlook { 
-    background: #0078d4; 
-    color: #ffffff; 
+    background: #f0f9ff; 
+    color: #0c4a6e; 
+    border-color: #bae6fd;
 }
 .service-badge.onedrive { 
-    background: #0078d4; 
-    color: #ffffff; 
-}
-.service-badge.edge { 
-    background: #0078d4; 
-    color: #ffffff; 
-}
-.service-badge.office { 
-    background: #d83b01; 
-    color: #ffffff; 
-}
-.service-badge.sharepoint { 
-    background: #0078d4; 
-    color: #ffffff; 
-}
-
-/* Dark mode adjustments for service badges */
-[data-theme="dark"] .service-badge.teams { 
-    background: #7b68ee; 
-    color: #ffffff; 
-}
-[data-theme="dark"] .service-badge.outlook { 
-    background: #4fa8f5; 
-    color: #ffffff; 
-}
-[data-theme="dark"] .service-badge.onedrive { 
-    background: #4fa8f5; 
-    color: #ffffff; 
-}
-[data-theme="dark"] .service-badge.edge { 
-    background: #4fa8f5; 
-    color: #ffffff; 
-}
-[data-theme="dark"] .service-badge.office { 
-    background: #ff6b35; 
-    color: #ffffff; 
+    background: #ecfdf5; 
+    color: #064e3b; 
+    border-color: #a7f3d0;
 }
 
 .status-badge {
@@ -307,23 +220,15 @@ th {
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
 }
 
 .status-established { 
     background: #dcfce7; 
     color: #166534; 
-    border: 1px solid #bbf7d0;
-}
-.status-timewait { 
-    background: #fef3c7; 
-    color: #92400e; 
-    border: 1px solid #fde68a;
 }
 .status-active { 
     background: #dcfce7; 
     color: #166534; 
-    border: 1px solid #bbf7d0;
 }
 
 .latency {
@@ -339,27 +244,14 @@ th {
 .latency.good { 
     background: #dcfce7; 
     color: #166534; 
-    border: 1px solid #bbf7d0;
 }
 .latency.fair { 
     background: #fef3c7; 
     color: #92400e; 
-    border: 1px solid #fde68a;
-}
-.latency.poor { 
-    background: #fecaca; 
-    color: #991b1b; 
-    border: 1px solid #fca5a5;
 }
 
-.process-name {
-    font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-}
-
-.endpoint-address {
-    font-family: 'Monaco', 'Menlo', monospace;
+.process-name, .endpoint-address {
+    font-family: 'Consolas', 'Monaco', monospace;
     font-size: 0.8rem;
     color: var(--text-secondary);
 }
@@ -367,26 +259,6 @@ th {
 .timestamp {
     color: var(--text-secondary);
     font-size: 0.75rem;
-}
-
-.charts-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 2rem;
-    margin-bottom: 2rem;
-}
-
-.chart-container {
-    background: var(--card-bg);
-    backdrop-filter: blur(20px);
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 1px 3px var(--shadow);
-    border: 1px solid var(--border-color);
-}
-
-.chart-canvas {
-    max-height: 300px;
 }
 
 .footer {
@@ -398,138 +270,16 @@ th {
     margin-top: 2rem;
 }
 
-.alert {
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    margin-bottom: 0.5rem;
-    border-left: 4px solid;
-}
-
-.alert-info {
-    background: #eff6ff;
-    border-color: #3b82f6;
-    color: #1e40af;
-}
-
-.alert-warning {
-    background: #fefce8;
-    border-color: #eab308;
-    color: #a16207;
-}
-
-.alert-error {
-    background: #fef2f2;
-    border-color: #ef4444;
-    color: #dc2626;
-}
-
-/* Dark mode alert adjustments */
-[data-theme="dark"] .alert-info {
-    background: rgba(59, 130, 246, 0.1);
-    color: #93c5fd;
-}
-
-[data-theme="dark"] .alert-warning {
-    background: rgba(234, 179, 8, 0.1);
-    color: #fbbf24;
-}
-
-[data-theme="dark"] .alert-error {
-    background: rgba(239, 68, 68, 0.1);
-    color: #f87171;
-}
-
-/* Dark mode status badge adjustments */
-[data-theme="dark"] .status-established {
-    background: rgba(16, 185, 129, 0.2);
-    color: #6ee7b7;
-    border-color: rgba(16, 185, 129, 0.3);
-}
-
-[data-theme="dark"] .status-timewait {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-    border-color: rgba(245, 158, 11, 0.3);
-}
-
-[data-theme="dark"] .latency.good {
-    background: rgba(16, 185, 129, 0.2);
-    color: #6ee7b7;
-    border-color: rgba(16, 185, 129, 0.3);
-}
-
-[data-theme="dark"] .latency.fair {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-    border-color: rgba(245, 158, 11, 0.3);
-}
-
-[data-theme="dark"] .latency.poor {
-    background: rgba(239, 68, 68, 0.2);
-    color: #f87171;
-    border-color: rgba(239, 68, 68, 0.3);
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 @media (max-width: 768px) {
-    .content-grid,
-    .charts-grid {
+    .content-grid {
         grid-template-columns: 1fr;
     }
-
-    .header {
-        flex-direction: column;
-        gap: 1rem;
-        padding: 1rem;
-    }
-
-    .header-controls {
-        flex-direction: column;
-        gap: 0.5rem;
-        width: 100%;
-    }
-
     .dashboard-grid {
         grid-template-columns: 1fr;
     }
-
-    table {
-        font-size: 0.8rem;
-    }
-
-    th, td {
-        padding: 0.5rem 0.25rem;
-    }
-}
-
-/* Loading animation */
-.loading {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border: 2px solid var(--text-secondary);
-    border-radius: 50%;
-    border-top-color: var(--text-accent);
-    animation: spin 1s ease-in-out infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Improved scrollbar */
-::-webkit-scrollbar {
-    width: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: var(--table-bg);
-}
-
-::-webkit-scrollbar-thumb {
-    background: var(--text-secondary);
-    border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: var(--text-primary);
 }
